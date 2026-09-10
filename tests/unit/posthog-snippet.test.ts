@@ -92,6 +92,27 @@ void test("captures scroll depth as an integer percent with the contract propert
   }
 });
 
+void test("legacy alias events keep their pre-contract property shape during the transition", async () => {
+  const { layout, cleanup } = await injectedLayout();
+  try {
+    const ctaAlias = POSTHOG_LEGACY_EVENT_ALIASES[POSTHOG_EVENTS.CTA_CLICKED];
+    const formAlias = POSTHOG_LEGACY_EVENT_ALIASES[POSTHOG_EVENTS.LEAD_FORM_SUBMITTED];
+    assert.ok(ctaAlias && formAlias, "transition window is open for both legacy names");
+    assert.match(layout, /var legacyProps = \{ label: props\.label, page: pagePath \};/);
+    assert.match(layout, /var legacyProps = \{ formId: props\.form_id, page: pagePath \};/);
+    assert.match(layout, new RegExp(`posthog\\.capture\\("${ctaAlias}", legacyProps\\)`));
+    assert.match(layout, new RegExp(`posthog\\.capture\\("${formAlias}", legacyProps\\)`));
+    // Canonical events never receive the legacy shape.
+    assert.match(layout, new RegExp(`posthog\\.capture\\("${POSTHOG_EVENTS.CTA_CLICKED}", props\\)`));
+    assert.match(
+      layout,
+      new RegExp(`posthog\\.capture\\("${POSTHOG_EVENTS.LEAD_FORM_SUBMITTED}", props\\)`),
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 void test("does not expose an ambiguous legacy PostHog credential", async () => {
   const ctx = fixtureContext();
   try {

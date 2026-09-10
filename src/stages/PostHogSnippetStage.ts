@@ -16,17 +16,23 @@ const MARKER = "<!-- L9:POSTHOG:INJECTED -->";
 
 /**
  * One `posthog.capture(...)` call per name the event is published under: the
- * canonical name from the shared contract, plus its legacy alias while the
+ * canonical name from the shared contract with the contract's properties, plus
+ * its legacy alias with the property shape that alias always had, while the
  * dual-emit transition window in `POSTHOG_LEGACY_EVENT_ALIASES` is open. Event
  * names are never written as literals here — the shared contract is the only
  * source, so the generated site and SEO-Bot's queries cannot drift apart.
  */
-function captureCalls(event: PostHogEventName, propsExpression: string): string {
+function captureCalls(
+  event: PostHogEventName,
+  propsExpression: string,
+  legacyPropsExpression: string = propsExpression,
+): string {
+  const calls = [`posthog.capture(${JSON.stringify(event)}, ${propsExpression});`];
   const alias = POSTHOG_LEGACY_EVENT_ALIASES[event];
-  const names = alias === undefined ? [event] : [event, alias];
-  return names
-    .map((name) => `posthog.capture(${JSON.stringify(name)}, ${propsExpression});`)
-    .join(" ");
+  if (alias !== undefined) {
+    calls.push(`posthog.capture(${JSON.stringify(alias)}, ${legacyPropsExpression});`);
+  }
+  return calls.join(" ");
 }
 
 /**
@@ -34,7 +40,9 @@ function captureCalls(event: PostHogEventName, propsExpression: string): string 
  * follow the contract documented in `@quantum-l9/bot-interop` posthog-events:
  * every event carries `page_path`; scroll depth is an integer percent sent once
  * per page when the document is hidden, and a page too short to scroll counts
- * as fully read rather than as 0%.
+ * as fully read rather than as 0%. Legacy aliases keep their pre-contract
+ * shape (`{ label, page }` / `{ formId, page }`) so existing dashboards keep
+ * working until the transition window closes.
  */
 function eventWiringScript(): string {
   return [
@@ -43,13 +51,15 @@ function eventWiringScript(): string {
     "    document.querySelectorAll('a[href^=\"tel:\"], a[data-cta], button[data-cta]').forEach(function(el) {",
     "      el.addEventListener('click', function() {",
     "        var props = { label: (el.textContent || '').trim(), page_path: pagePath };",
-    `        ${captureCalls(POSTHOG_EVENTS.CTA_CLICKED, "props")}`,
+    "        var legacyProps = { label: props.label, page: pagePath };",
+    `        ${captureCalls(POSTHOG_EVENTS.CTA_CLICKED, "props", "legacyProps")}`,
     "      });",
     "    });",
     "    document.querySelectorAll('form').forEach(function(form) {",
     "      form.addEventListener('submit', function() {",
     "        var props = { form_id: form.id || 'unknown', page_path: pagePath };",
-    `        ${captureCalls(POSTHOG_EVENTS.LEAD_FORM_SUBMITTED, "props")}`,
+    "        var legacyProps = { formId: props.form_id, page: pagePath };",
+    `        ${captureCalls(POSTHOG_EVENTS.LEAD_FORM_SUBMITTED, "props", "legacyProps")}`,
     "      });",
     "    });",
     "    var maxScroll = 0, ticking = false, scrollDepthSent = false;",
