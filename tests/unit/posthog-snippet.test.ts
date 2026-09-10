@@ -103,7 +103,10 @@ void test("legacy alias events keep their pre-contract property shape during the
     assert.match(layout, new RegExp(`posthog\\.capture\\("${ctaAlias}", legacyProps\\)`));
     assert.match(layout, new RegExp(`posthog\\.capture\\("${formAlias}", legacyProps\\)`));
     // Canonical events never receive the legacy shape.
-    assert.match(layout, new RegExp(`posthog\\.capture\\("${POSTHOG_EVENTS.CTA_CLICKED}", props\\)`));
+    assert.match(
+      layout,
+      new RegExp(`posthog\\.capture\\("${POSTHOG_EVENTS.CTA_CLICKED}", props\\)`),
+    );
     assert.match(
       layout,
       new RegExp(`posthog\\.capture\\("${POSTHOG_EVENTS.LEAD_FORM_SUBMITTED}", props\\)`),
