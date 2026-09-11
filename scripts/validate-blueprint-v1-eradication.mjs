@@ -51,6 +51,10 @@ const HISTORICAL_ALLOW = new Map([
     "the V1→V2 value-extraction matrix that licensed deletion (WBV2-016)",
   ],
   [
+    "reports/test-runs/quantum-ai-partners-20260901/quantum-ai-partners-benchmark/validation/final-report.md",
+    "benchmark report: cites the V1→V2 supersession commit subject as its test subject",
+  ],
+  [
     "docs/architecture/WEBSITE_BUILD_BLUEPRINT_V2_INVARIANTS.md",
     "the invariants themselves, which name V1 to forbid it",
   ],

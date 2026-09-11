@@ -17,7 +17,13 @@ import {
 import type { AcceptedDonorEvidence } from "../../src/intelligence/DonorIngestion.js";
 
 export const CLIENT_ID = "redesign-test-client";
-export const BUILD_ID = "redesign-test-build";
+/**
+ * Unique per test process. Ten test files seal artifacts under this id and
+ * several stage them under `clientAssetRoot` (build/assets/<client>/<build>);
+ * node:test runs files in parallel workers, so a fixed id made them share one
+ * directory and race each other's `rmSync` with ENOTEMPTY.
+ */
+export const BUILD_ID = `redesign-test-build-${process.pid}`;
 
 export function makeLandscape(options?: {
   donorDomains?: string[];
