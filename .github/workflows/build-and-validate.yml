@@ -40,6 +40,12 @@ jobs:
         run: npm run evidence:test
       - name: Site-factory structural proof
         run: npm run site:validate
+      # The local suite drives a real browser
+      # (tests/integration/local/rendered-site-browser.test.ts). A missing
+      # browser is a gate failure, not a skip, so the binary is provisioned
+      # here exactly as ci.yml does.
+      - name: Install Playwright Chromium
+        run: npx --no-install playwright install --with-deps chromium
       - name: Site-factory deterministic local tests
         run: npm run site:test:local
       - name: Provisioning transaction tests
