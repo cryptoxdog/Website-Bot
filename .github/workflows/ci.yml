@@ -47,6 +47,8 @@ jobs:
         run: npm ci --no-audit --no-fund --ignore-scripts && npm rebuild better-sqlite3
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: DomainSpec semantic conservation
+        run: npm run normalize-spec:check
       # rendered-site-validation renders every built route in headless Chromium
       # (tests/integration/local/rendered-site-browser.test.ts). A missing
       # browser is a gate failure, not a skip, so the binary is provisioned here.
