@@ -109,7 +109,13 @@ function deriveBusinessFacts(ds: any): DomainSpec["business_facts"] {
   const licensePhrases = (Array.isArray(ds.authority?.licenses) ? ds.authority.licenses : [])
     .map((license: any) => {
       if (!isObject(license) || hasPlaceholderDeep(license)) return undefined;
-      const parts = [license.license_type, license.type, license.state, license.license_number]
+      const parts = [
+        license.license_type,
+        license.type,
+        license.state,
+        ...strings(license.states),
+        license.license_number,
+      ]
         .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
         .map((part) => part.trim());
       return parts.length > 0 ? [...new Set(parts)].join(" ") : undefined;
