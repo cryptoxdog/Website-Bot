@@ -1,10 +1,22 @@
 // L9_META: layer=test, role=unit, status=active, version=1.1.0
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
 import { parse } from "yaml";
 import { buildFlatSpec } from "../../scripts/normalize-spec.js";
 import { validateDomainSpec } from "../../src/pipeline/validateDomainSpec.js";
+
+const VALID_VALUE_PROPOSITION = {
+  status: "locked",
+  target_customer: ["technical buyers"],
+  problem: ["integration risk"],
+  outcome: ["working AI systems"],
+  mechanism: ["engineering delivery"],
+  differentiators: ["systems discipline"],
+  reasons_to_believe: ["engineering depth"],
+  boundaries: ["no guaranteed outcomes"],
+};
 
 function rich(overrides: Record<string, unknown> = {}) {
   return {
@@ -35,16 +47,7 @@ function rich(overrides: Record<string, unknown> = {}) {
         service_lines: [{ name: "AI Strategy" }],
         deliverables: ["roadmap"],
       },
-      value_proposition: {
-        status: "locked",
-        target_customer: ["technical buyers"],
-        problem: ["integration risk"],
-        outcome: ["working AI systems"],
-        mechanism: ["engineering delivery"],
-        differentiators: ["systems discipline"],
-        reasons_to_believe: ["engineering depth"],
-        boundaries: ["no guaranteed outcomes"],
-      },
+      value_proposition: { ...VALID_VALUE_PROPOSITION },
       conversion: {
         primary_conversion: { label: "Book an Intro Call" },
         secondary_conversions: [{ label: "Email Us" }],
@@ -115,6 +118,23 @@ test("v1.1 requires an explicit grounded value proposition", () => {
     () => buildFlatSpec(rich({ value_proposition: undefined })),
     /value_proposition is required/,
   );
+});
+
+test("unknown value_proposition.status is rejected, never coerced to locked", () => {
+  for (const status of ["approved", "LOCKED", "Draft", "", undefined, null, 1]) {
+    assert.throws(
+      () => buildFlatSpec(rich({ value_proposition: { ...VALID_VALUE_PROPOSITION, status } })),
+      /value_proposition\.status must be one of locked\|draft/,
+      `expected rejection for status ${JSON.stringify(status)}`,
+    );
+  }
+});
+
+test("an explicit draft value proposition stays draft", () => {
+  const flat = buildFlatSpec(
+    rich({ value_proposition: { ...VALID_VALUE_PROPOSITION, status: "draft" } }),
+  );
+  assert.equal(flat.value_proposition?.status, "draft");
 });
 
 test("new unclassified source fields fail closed", () => {
@@ -250,4 +270,27 @@ test("legacy v1.0 source remains compilable without a value proposition block", 
   assert.equal(flat.value_proposition, undefined);
   assert.ok(flat.business_facts && Object.keys(flat.business_facts).length > 0);
   assert.doesNotThrow(() => validateDomainSpec(flat, "legacy-v1"));
+});
+
+test("importing the normalizer does not run its CLI writer", () => {
+  // This suite imports buildFlatSpec. Before the entry-point guard, that import
+  // executed main() and rewrote the committed IR, making the tests a writer of
+  // the very artifact normalize-spec:check compares against.
+  const outPath = "examples/supplemental-insurance-pros/domain_spec.normalized.yaml";
+  const mtimeBefore = statSync(outPath).mtimeMs;
+  const bodyBefore = readFileSync(outPath, "utf-8");
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "-e", "await import('./scripts/normalize-spec.ts');"],
+    { encoding: "utf-8" },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    statSync(outPath).mtimeMs,
+    mtimeBefore,
+    "importing scripts/normalize-spec.ts rewrote the committed IR",
+  );
+  assert.equal(readFileSync(outPath, "utf-8"), bodyBefore);
 });

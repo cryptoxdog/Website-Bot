@@ -1,6 +1,7 @@
 // L9_META: layer=cli, role=spec_normalizer, status=active, version=1.1.0
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 import type {
   ContentGuardrails,
@@ -10,7 +11,7 @@ import type {
   SemanticProvenance,
   ValuePropositionContract,
 } from "../src/pipeline/BuildContext.js";
-import { validateDomainSpec } from "../src/pipeline/validateDomainSpec.js";
+import { hasPlaceholder, validateDomainSpec } from "../src/pipeline/validateDomainSpec.js";
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -43,16 +44,17 @@ function titleFromPath(path: string): string {
   return path.replace(/^\//, "").split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-function hasPlaceholder(v: unknown): boolean {
-  return typeof v === "string" && v.includes("{{") && v.includes("}}");
-}
-
 function hasPlaceholderDeep(v: unknown): boolean {
   if (typeof v === "string") return hasPlaceholder(v);
   if (Array.isArray(v)) return v.some(hasPlaceholderDeep);
   if (isObject(v)) return Object.values(v).some(hasPlaceholderDeep);
   return false;
 }
+
+const VALUE_PROPOSITION_STATUSES: readonly ValuePropositionContract["status"][] = [
+  "locked",
+  "draft",
+];
 
 const REQUIRED_PALETTE_KEYS = ["primary", "secondary"] as const;
 const BUILD_INTENTS = ["COPY", "REDESIGN_IMPROVE"] as const;
@@ -137,8 +139,13 @@ function compileValueProposition(ds: any): ValuePropositionContract | undefined 
     return undefined;
   }
   const vp = ds.value_proposition;
+  if (!VALUE_PROPOSITION_STATUSES.includes(vp.status)) {
+    throw new Error(
+      `value_proposition.status must be one of ${VALUE_PROPOSITION_STATUSES.join("|")}, got ${JSON.stringify(vp.status)}`,
+    );
+  }
   const compiled: ValuePropositionContract = {
-    status: vp.status === "draft" ? "draft" : "locked",
+    status: vp.status,
     target_customer: strings(vp.target_customer),
     problem: strings(vp.problem),
     outcome: strings(vp.outcome),
@@ -396,4 +403,20 @@ function main() {
   console.log(`Wrote ${outPath} from ${inPath}.`);
 }
 
-main();
+/**
+ * True only when this file is the process entry point. Without the guard,
+ * `main()` ran on import: the unit tests import buildFlatSpec, which silently
+ * rewrote the committed IR and made the suite a writer of the artifact its own
+ * CI gate compares against.
+ */
+function invokedAsCli(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli()) main();
