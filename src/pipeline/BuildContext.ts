@@ -270,11 +270,6 @@ export interface SiteConfig {
 
 export interface QualityEvidence {
   seoBaseline: EvidenceGateStatus;
-  visualBaseline: EvidenceGateStatus;
-  seoPostBuild: EvidenceGateStatus;
-  visualPostBuild: EvidenceGateStatus;
-  buildProof: EvidenceGateStatus;
-  release: EvidenceGateStatus;
   visualQa: EvidenceGateStatus;
 }
 
