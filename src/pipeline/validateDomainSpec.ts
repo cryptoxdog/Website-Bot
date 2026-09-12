@@ -23,6 +23,32 @@ function validOptionalString(value: unknown): boolean {
   return value === undefined || (typeof value === "string" && value.trim().length > 0);
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isNonEmptyStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isNonEmptyString);
+}
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString);
+}
+
+/**
+ * Unresolved authoring placeholders ("{{PHONE_PLACEHOLDER}}") survive
+ * normalization anywhere the compiler has no rule that strips them. They must
+ * never reach a stage that treats first-party semantics as locked authority,
+ * so spec load rejects them instead of publishing the literal token.
+ *
+ * Exported so the spec normalizer shares one definition with the gate that
+ * validates its output: if the two drifted, the compiler could emit an IR its
+ * own validation step then rejects.
+ */
+export function hasPlaceholder(value: unknown): boolean {
+  return typeof value === "string" && value.includes("{{") && value.includes("}}");
+}
+
 function validOptionalEnvRef(value: unknown): boolean {
   return (
     value === undefined || (typeof value === "string" && /^env:\/\/[A-Z][A-Z0-9_]*$/.test(value))
@@ -173,6 +199,228 @@ function validateSeoContract(
       "seo_contract.target_keywords, when present, must be a non-empty array of non-empty strings",
     );
   }
+  if (contract.route_targets !== undefined) {
+    validateRouteTargets(contract.route_targets, root.routes, errors, check);
+  }
+}
+
+function collectRouteSlugs(routes: unknown): Set<string> {
+  const slugs = new Set<string>();
+  if (!Array.isArray(routes)) return slugs;
+  for (const route of routes) {
+    if (!isObject(route) || typeof route.slug !== "string") continue;
+    try {
+      slugs.add(normalizeRouteSlug(route.slug));
+    } catch {
+      // Slug validity is already reported by validateRoutes; do not double-report.
+    }
+  }
+  return slugs;
+}
+
+/**
+ * route_targets binds an SEO keyword cluster to the route that must rank for
+ * it. A target naming no declared route drops that cluster's search intent at
+ * the SEO boundary, so referential integrity is enforced at spec load rather
+ * than discovered downstream as a page that was never built.
+ */
+function validateRouteTargets(
+  targets: unknown,
+  routes: unknown,
+  errors: string[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  if (!Array.isArray(targets) || targets.length === 0) {
+    errors.push("seo_contract.route_targets, when present, must be a non-empty array");
+    return;
+  }
+  const slugs = collectRouteSlugs(routes);
+  const seenClusters = new Set<string>();
+  targets.forEach((target, index) => {
+    const label = `seo_contract.route_targets[${index}]`;
+    if (!isObject(target)) {
+      errors.push(`${label} must be an object`);
+      return;
+    }
+    check(
+      isNonEmptyString(target.cluster_name),
+      `${label}.cluster_name must be a non-empty string`,
+    );
+    check(isNonEmptyString(target.intent), `${label}.intent must be a non-empty string`);
+    check(
+      isNonEmptyStringList(target.keywords),
+      `${label}.keywords must be a non-empty array of non-empty strings`,
+    );
+    if (isNonEmptyString(target.cluster_name)) {
+      if (seenClusters.has(target.cluster_name))
+        errors.push(`${label}.cluster_name duplicates ${target.cluster_name}`);
+      seenClusters.add(target.cluster_name);
+    }
+    if (!isNonEmptyString(target.target_page)) {
+      errors.push(`${label}.target_page must be a non-empty string`);
+      return;
+    }
+    let normalized: string;
+    try {
+      normalized = normalizeRouteSlug(target.target_page);
+    } catch (error) {
+      errors.push(`${label}.target_page is not a valid route slug: ${describeError(error)}`);
+      return;
+    }
+    check(
+      slugs.has(normalized),
+      `${label}.target_page ${target.target_page} does not match any declared route slug`,
+    );
+  });
+}
+
+const VALUE_PROPOSITION_STATUSES = new Set(["locked", "draft"]);
+const VALUE_PROPOSITION_FIELDS = [
+  "target_customer",
+  "problem",
+  "outcome",
+  "mechanism",
+  "differentiators",
+  "reasons_to_believe",
+  "boundaries",
+] as const;
+
+/**
+ * value_proposition is first-party commercial authority: the blueprint
+ * compiler lets it outrank model proposals. An unknown status or placeholder
+ * text must therefore fail at load — a malformed block that reached the
+ * compiler would silently govern a build it cannot be trusted to govern.
+ */
+function validateValueProposition(
+  value: unknown,
+  errors: string[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push("value_proposition, when present, must be an object");
+    return;
+  }
+  check(
+    typeof value.status === "string" && VALUE_PROPOSITION_STATUSES.has(value.status),
+    "value_proposition.status must be one of locked|draft",
+  );
+  for (const field of VALUE_PROPOSITION_FIELDS) {
+    const entry = value[field];
+    if (!isNonEmptyStringList(entry)) {
+      errors.push(`value_proposition.${field} must be a non-empty array of non-empty strings`);
+      continue;
+    }
+    check(
+      !entry.some(hasPlaceholder),
+      `value_proposition.${field} must not contain unresolved {{PLACEHOLDER}} text`,
+    );
+  }
+}
+
+/**
+ * conversion_authority carries the operator's own CTA language. A placeholder
+ * here would be rendered verbatim as a button label on the live site.
+ */
+function validateConversionAuthority(
+  value: unknown,
+  errors: string[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push("conversion_authority, when present, must be an object");
+    return;
+  }
+  check(
+    isNonEmptyString(value.primary_action),
+    "conversion_authority.primary_action must be a non-empty string",
+  );
+  check(
+    !hasPlaceholder(value.primary_action),
+    "conversion_authority.primary_action must not contain unresolved {{PLACEHOLDER}} text",
+  );
+  // ConversionAuthority declares all three fields; the compiler always emits
+  // the lists even when empty, so a missing one means a hand-edited IR.
+  for (const field of ["secondary_actions", "cta_library"] as const) {
+    const entry = value[field];
+    if (!isStringList(entry)) {
+      errors.push(`conversion_authority.${field} must be an array of non-empty strings`);
+      continue;
+    }
+    check(
+      !entry.some(hasPlaceholder),
+      `conversion_authority.${field} must not contain unresolved {{PLACEHOLDER}} text`,
+    );
+  }
+}
+
+/**
+ * content_guardrails is the compliance deny-list. An empty or malformed block
+ * would read downstream as "nothing is forbidden" for a regulated vertical.
+ */
+function validateContentGuardrails(
+  value: unknown,
+  errors: string[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push("content_guardrails, when present, must be an object");
+    return;
+  }
+  check(
+    isNonEmptyStringList(value.forbidden_claims),
+    "content_guardrails.forbidden_claims must be a non-empty array of non-empty strings",
+  );
+}
+
+const PROVENANCE_PATH_FIELDS = [
+  "runtime_authority_paths",
+  "gate_paths",
+  "provenance_paths",
+] as const;
+
+function validateSemanticProvenance(
+  value: unknown,
+  errors: string[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push("semantic_provenance, when present, must be an object");
+    return;
+  }
+  check(
+    isNonEmptyString(value.source_spec_version),
+    "semantic_provenance.source_spec_version must be a non-empty string",
+  );
+  check(
+    isNonEmptyString(value.compiler_version),
+    "semantic_provenance.compiler_version must be a non-empty string",
+  );
+  for (const field of PROVENANCE_PATH_FIELDS) {
+    check(
+      isStringList(value[field]),
+      `semantic_provenance.${field} must be an array of non-empty strings`,
+    );
+  }
+}
+
+/**
+ * The v1.1 semantic compiler emits first-party authority that outranks model
+ * output downstream. Validate it at the same gate that already guards the
+ * legacy contract, so malformed authority fails before any stage acts on it.
+ */
+function validateSemanticAuthority(
+  root: Record<string, unknown>,
+  errors: string[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  validateValueProposition(root.value_proposition, errors, check);
+  validateConversionAuthority(root.conversion_authority, errors, check);
+  validateContentGuardrails(root.content_guardrails, errors, check);
+  validateSemanticProvenance(root.semantic_provenance, errors, check);
 }
 
 const ASPECT_RATIO = /^\d+(?:\.\d+)?\s*[:x/]\s*\d+(?:\.\d+)?$/;
@@ -802,6 +1050,7 @@ export function validateDomainSpec(parsed: unknown, specPath: string): DomainSpe
   validateRoutes(root.routes, errors, check);
   validateDesign(root.design, errors, check);
   validateSeoContract(root, errors, check);
+  validateSemanticAuthority(root, errors, check);
   validateAssets(root, errors, check);
   validateDeploy(root.deploy, errors, check);
   validateProvision(root.provision, errors, check);

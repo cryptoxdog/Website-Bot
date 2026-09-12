@@ -27,6 +27,9 @@ routes:
       - service_area
       - faq_preview
       - final_cta
+    purpose: Position the company, route homeowners and contractors, explain trust points, capture leads.
+    template: homepage
+    priority: 1
   - slug: /insurance-supplementing
     title: Insurance Supplementing
     components:
@@ -37,6 +40,9 @@ routes:
       - documents_needed
       - compliance_note
       - cta
+    purpose: Explain insurance supplementing, estimate review, documentation, and supplement support.
+    template: service_page
+    priority: 2
   - slug: /homeowners
     title: Homeowners
     components: &a1
@@ -46,9 +52,15 @@ routes:
       - what_to_prepare
       - proof
       - cta
+    purpose: Explain claim review help for homeowners and set realistic expectations.
+    template: audience_page
+    priority: 3
   - slug: /contractors
     title: Contractors
     components: *a1
+    purpose: Explain supplement support for contractors handling property restoration or repair work.
+    template: audience_page
+    priority: 4
   - slug: /service-area
     title: Service Area
     components:
@@ -57,6 +69,9 @@ routes:
       - service_area_rules
       - no_city_page_bloat_note
       - cta
+    purpose: Cover Tennessee and bordering states without premature city-page bloat.
+    template: service_area_page
+    priority: 5
   - slug: /about
     title: About
     components:
@@ -64,6 +79,9 @@ routes:
       - credentials
       - experience
       - cta
+    purpose: Build trust around licensed public adjuster status and experience.
+    template: about_page
+    priority: 6
   - slug: /faq
     title: FAQ
     components:
@@ -71,17 +89,26 @@ routes:
       - faq_groups
       - disclaimer
       - cta
+    purpose: Answer supplementing, process, homeowner, contractor, and compliance questions.
+    template: faq_page
+    priority: 7
   - slug: /contact
     title: Contact
     components:
       - hero
       - contact_form
       - cta
+    purpose: Lead form, phone CTA, service email placeholder, and contact instructions.
+    template: contact_page
+    priority: 8
   - slug: /thank-you
     title: Thank You
     components:
       - hero
       - confirmation
+    purpose: Post-submit confirmation page.
+    template: thank_you_page
+    priority: 9
     noindex: true
 seo_contract:
   site_url: https://supplementalinsurancepros.com
@@ -100,10 +127,40 @@ seo_contract:
     - insurance supplementing Tennessee
     - insurance supplementing TN
     - public adjuster supplement help Tennessee
+  route_targets:
+    - cluster_name: insurance_supplementing
+      target_page: /insurance-supplementing
+      intent: service_provider
+      keywords:
+        - insurance supplementing
+        - insurance claim supplement
+        - claim supplement services
+        - property insurance supplement
+        - public adjuster supplement help
+    - cluster_name: homeowner_claim_review
+      target_page: /homeowners
+      intent: homeowner_service
+      keywords:
+        - insurance claim review for homeowners
+        - underpaid insurance claim help
+        - estimate supplement review
+    - cluster_name: contractor_supplement_support
+      target_page: /contractors
+      intent: contractor_service
+      keywords:
+        - contractor supplement support
+        - roofing supplement help
+        - restoration supplement support
+    - cluster_name: regional_service_area
+      target_page: /service-area
+      intent: local_service
+      keywords:
+        - insurance supplementing Tennessee
+        - insurance supplementing TN
+        - public adjuster supplement help Tennessee
   metadata_rules:
     title_pattern: "{Primary Keyword} | Supplemental Insurance Pros"
-    description_pattern: Licensed public adjuster support for {Audience} with
-      insurance claim supplements across Tennessee and bordering states.
+    description_pattern: Licensed public adjuster support for {Audience} with insurance claim supplements across Tennessee and bordering states.
   schema_rules:
     - Organization
     - LocalBusiness
@@ -158,3 +215,130 @@ wom_flags:
   - key: state_compliance_unvalidated
     value: TN,KY,VA,NC,GA,AL,MS,AR,MO
     severity: warning
+business_facts:
+  legal_name: Supplemental Insurance Pros
+  tagline: Insurance supplementing support for homeowners and contractors.
+  brand_positioning: Licensed public adjuster-led insurance supplementing support for homeowners and contractors across Tennessee and bordering states.
+  primary_value: Help property claim stakeholders identify missed scope, organize documentation, and pursue legitimate claim supplements without overpromising carrier outcomes.
+  competitive_angle: Licensed public adjuster with over 20 years of experience serving both homeowners and contractors.
+  core_offer: Insurance claim supplementing and estimate review support.
+  offer_type: service
+  pricing_visibility: quote_based
+  deliverables:
+    - estimate_review
+    - scope_gap_summary
+    - supplement_documentation_guidance
+    - claim_support_intake
+  decision_makers:
+    - homeowner
+    - contractor_owner
+    - project_manager
+  pain_points:
+    - claim_scope_missing_items
+    - estimate_does_not_match_real_repair_cost
+    - supplement_documentation_is_disorganized
+    - claim_language_is_confusing
+    - contractor_needs_scope_support_without_overbuilding_internal_staff
+  trust_requirements:
+    - licensed_public_adjuster_status
+    - over_20_years_experience_claim
+    - clear_no_guarantee_disclaimer
+    - plain_english_process
+    - conservative_compliance_language
+  service_area_model: state_based
+  service_lines:
+    - Insurance Supplementing
+    - Homeowner Claim Review
+    - Contractor Supplement Support
+  credibility_claims:
+    - Licensed Public Adjuster
+    - Over 20 years of experience
+    - Homeowner and contractor support
+value_proposition:
+  status: locked
+  target_customer:
+    - Homeowners who need help reviewing a property insurance estimate or claim supplement.
+    - Contractors who need supplement support and organized documentation for covered repair scope.
+  problem:
+    - Property claim estimates may omit legitimate covered scope or cost items.
+    - Supplement documentation can be incomplete, disorganized, or difficult to understand.
+    - Homeowners and contractors need claim-literate support without promises about carrier outcomes.
+  outcome:
+    - Identify potential scope gaps in the available claim or estimate information.
+    - Organize documentation into a supplement-ready structure.
+    - Understand the supplementing process and realistic next steps.
+  mechanism:
+    - Licensed public adjuster-led estimate and claim-scope review.
+    - Scope-gap analysis and supplement documentation guidance.
+    - Separate homeowner and contractor support paths.
+  differentiators:
+    - Licensed public adjuster-led service.
+    - Over 20 years of experience.
+    - Support for both homeowners and contractors.
+    - Conservative compliance-first claim language.
+  reasons_to_believe:
+    - Licensed Public Adjuster
+    - Over 20 years of experience
+    - Homeowner and contractor support
+  boundaries:
+    - No guaranteed claim payment.
+    - No guaranteed claim increase.
+    - No guaranteed carrier approval.
+    - No carrier outcome promises.
+    - No legal advice unless explicitly approved.
+conversion_authority:
+  primary_action: Request a Claim Review
+  secondary_actions:
+    - Call Now
+    - Upload Your Estimate
+  cta_library:
+    - Request a Claim Review
+    - Talk to a Licensed Public Adjuster
+    - Upload Your Estimate
+    - Get Supplement Support
+content_guardrails:
+  forbidden_claims:
+    - carrier_outcome_promises
+    - generic_roofing_company_positioning
+    - guaranteed_approval
+    - guaranteed_claim_increase
+    - guaranteed_claim_payment
+    - guaranteed_payment
+    - legal_advice
+    - legal_advice_unless_approved
+semantic_provenance:
+  source_spec_version: 1.1.0
+  compiler_version: 1.1.0
+  runtime_authority_paths:
+    - audience
+    - authority
+    - content
+    - conversion
+    - design
+    - geography
+    - identity
+    - market
+    - offer
+    - seo
+    - value_proposition
+  gate_paths:
+    - authority
+    - compliance
+    - conversion
+    - design
+    - validation
+  provenance_paths:
+    - assets
+    - authority
+    - content
+    - deployment
+    - design
+    - experiments
+    - future_outputs
+    - geography
+    - identity
+    - integrations
+    - market
+    - metadata
+    - notes
+    - validation

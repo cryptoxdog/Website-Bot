@@ -148,3 +148,202 @@ void test("non-error or mismatched wom_flags do NOT bypass the lead_form_action 
     );
   }
 });
+
+// --- v1.1 semantic authority -------------------------------------------------
+// The blueprint compiler lets these blocks outrank model proposals, so spec
+// load is the last gate before malformed first-party data becomes authority.
+
+const SEMANTIC_ROUTES = [
+  { slug: "/", title: "Home", components: ["hero"] },
+  { slug: "/roof-repair", title: "Roof Repair", components: ["hero"] },
+];
+
+const VALUE_PROPOSITION = {
+  status: "locked",
+  target_customer: ["homeowners with storm damage"],
+  problem: ["estimates omit covered scope"],
+  outcome: ["documented supplement-ready scope"],
+  mechanism: ["licensed adjuster review"],
+  differentiators: ["licensed public adjuster"],
+  reasons_to_believe: ["over 20 years of experience"],
+  boundaries: ["no guaranteed carrier outcome"],
+};
+
+function semanticSpec(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return baseSpec({
+    routes: SEMANTIC_ROUTES,
+    seo_contract: {
+      site_url: "example.com",
+      route_targets: [
+        {
+          cluster_name: "roof_repair",
+          target_page: "/roof-repair",
+          intent: "service_provider",
+          keywords: ["roof repair"],
+        },
+      ],
+    },
+    value_proposition: VALUE_PROPOSITION,
+    conversion_authority: {
+      primary_action: "Request a Claim Review",
+      secondary_actions: ["Call Now"],
+      cta_library: ["Request a Claim Review"],
+    },
+    content_guardrails: { forbidden_claims: ["guaranteed_payment"] },
+    semantic_provenance: {
+      source_spec_version: "1.1.0",
+      compiler_version: "1.1.0",
+      runtime_authority_paths: ["offer"],
+      gate_paths: ["compliance"],
+      provenance_paths: ["metadata"],
+    },
+    ...overrides,
+  });
+}
+
+void test("a well-formed v1.1 semantic authority block passes spec load", () => {
+  assert.doesNotThrow(() => validateDomainSpec(semanticSpec(), "test.yaml"));
+});
+
+void test("a v1.0 spec with no semantic authority still passes spec load", () => {
+  assert.doesNotThrow(() =>
+    validateDomainSpec(baseSpec({ seo_contract: { site_url: "example.com" } }), "test.yaml"),
+  );
+});
+
+void test("unknown value_proposition.status is rejected at spec load", () => {
+  for (const status of ["approved", "LOCKED", "", undefined, 1]) {
+    assert.throws(
+      () =>
+        validateDomainSpec(
+          semanticSpec({ value_proposition: { ...VALUE_PROPOSITION, status } }),
+          "test.yaml",
+        ),
+      /value_proposition\.status must be one of locked\|draft/,
+      `expected rejection for status ${JSON.stringify(status)}`,
+    );
+  }
+});
+
+void test("placeholder text never survives as locked value proposition authority", () => {
+  const spec = semanticSpec({
+    value_proposition: {
+      ...VALUE_PROPOSITION,
+      reasons_to_believe: ["{{LICENSE_NUMBER_PLACEHOLDER}}"],
+    },
+  });
+  assert.throws(() => validateDomainSpec(spec, "test.yaml"), /must not contain unresolved/);
+});
+
+void test("an empty or malformed value_proposition field is rejected", () => {
+  for (const bad of [[], [""], "not-an-array", undefined]) {
+    assert.throws(
+      () =>
+        validateDomainSpec(
+          semanticSpec({ value_proposition: { ...VALUE_PROPOSITION, problem: bad } }),
+          "test.yaml",
+        ),
+      /value_proposition\.problem must be a non-empty array/,
+      `expected rejection for ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+void test("route_targets must point at a declared route", () => {
+  const spec = semanticSpec({
+    seo_contract: {
+      site_url: "example.com",
+      route_targets: [
+        {
+          cluster_name: "roof_repair",
+          target_page: "/not-a-route",
+          intent: "service_provider",
+          keywords: ["roof repair"],
+        },
+      ],
+    },
+  });
+  assert.throws(
+    () => validateDomainSpec(spec, "test.yaml"),
+    /target_page \/not-a-route does not match any declared route slug/,
+  );
+});
+
+void test("route_targets reject malformed entries and duplicate clusters", () => {
+  const base = {
+    cluster_name: "roof_repair",
+    target_page: "/roof-repair",
+    intent: "service_provider",
+    keywords: ["roof repair"],
+  };
+  const cases: Array<[unknown[], RegExp]> = [
+    [[{ ...base, keywords: [] }], /keywords must be a non-empty array/],
+    [[{ ...base, intent: "" }], /intent must be a non-empty string/],
+    [[{ ...base, target_page: "../etc" }], /target_page must be a non-empty string|route slug/],
+    [[base, base], /cluster_name duplicates roof_repair/],
+    [[], /route_targets, when present, must be a non-empty array/],
+  ];
+  for (const [routeTargets, expected] of cases) {
+    assert.throws(
+      () =>
+        validateDomainSpec(
+          semanticSpec({ seo_contract: { site_url: "example.com", route_targets: routeTargets } }),
+          "test.yaml",
+        ),
+      expected,
+      `expected rejection for ${JSON.stringify(routeTargets)}`,
+    );
+  }
+});
+
+void test("conversion_authority rejects missing or placeholder CTA authority", () => {
+  for (const primary of ["{{CTA_PLACEHOLDER}}", "", undefined]) {
+    assert.throws(
+      () =>
+        validateDomainSpec(
+          semanticSpec({ conversion_authority: { primary_action: primary } }),
+          "test.yaml",
+        ),
+      /conversion_authority\.primary_action/,
+      `expected rejection for ${JSON.stringify(primary)}`,
+    );
+  }
+});
+
+void test("content_guardrails must carry a real forbidden-claims list", () => {
+  for (const claims of [[], [""], "guaranteed_payment", undefined]) {
+    assert.throws(
+      () =>
+        validateDomainSpec(
+          semanticSpec({ content_guardrails: { forbidden_claims: claims } }),
+          "test.yaml",
+        ),
+      /content_guardrails\.forbidden_claims must be a non-empty array/,
+      `expected rejection for ${JSON.stringify(claims)}`,
+    );
+  }
+});
+
+void test("semantic_provenance must declare versions and path buckets", () => {
+  for (const [override, expected] of [
+    [{ source_spec_version: "" }, /source_spec_version must be a non-empty string/],
+    [{ compiler_version: undefined }, /compiler_version must be a non-empty string/],
+    [{ gate_paths: "compliance" }, /gate_paths must be an array of non-empty strings/],
+  ] as Array<[Record<string, unknown>, RegExp]>) {
+    const spec = semanticSpec({
+      semantic_provenance: {
+        source_spec_version: "1.1.0",
+        compiler_version: "1.1.0",
+        runtime_authority_paths: ["offer"],
+        gate_paths: ["compliance"],
+        provenance_paths: ["metadata"],
+        ...override,
+      },
+    });
+    assert.throws(
+      () => validateDomainSpec(spec, "test.yaml"),
+      expected,
+      `expected rejection for ${JSON.stringify(override)}`,
+    );
+  }
+});

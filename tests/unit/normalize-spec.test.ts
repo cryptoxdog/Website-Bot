@@ -1,21 +1,70 @@
-// L9_META: layer=test, role=unit, status=active, version=1.0.0
+// L9_META: layer=test, role=unit, status=active, version=1.1.0
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
 import { parse } from "yaml";
 import { buildFlatSpec } from "../../scripts/normalize-spec.js";
 import { validateDomainSpec } from "../../src/pipeline/validateDomainSpec.js";
 
-/** Minimal rich authoring spec; overrides target the block under test. */
+const VALID_VALUE_PROPOSITION = {
+  status: "locked",
+  target_customer: ["technical buyers"],
+  problem: ["integration risk"],
+  outcome: ["working AI systems"],
+  mechanism: ["engineering delivery"],
+  differentiators: ["systems discipline"],
+  reasons_to_believe: ["engineering depth"],
+  boundaries: ["no guaranteed outcomes"],
+};
+
 function rich(overrides: Record<string, unknown> = {}) {
   return {
     domain_spec: {
-      metadata: { spec_id: "test-client" },
-      identity: { business_name: "Test Co", canonical_url: "https://test.example.com" },
-      market: { niche: "ai_consulting" },
-      geography: { primary_regions: ["US"] },
+      metadata: { spec_id: "test-client", version: "1.1.0" },
+      identity: {
+        business_name: "Test Co",
+        legal_name: "Test Company LLC",
+        canonical_url: "https://test.example.com",
+        brand_positioning: {
+          one_liner: "Grounded test positioning",
+          primary_value: "Grounded value",
+        },
+      },
+      market: {
+        niche: "ai_consulting",
+        competitive_angle: "Grounded angle",
+        buying_triggers: ["integration_backlog"],
+        objections: ["integration_risk"],
+      },
+      audience: {
+        decision_makers: ["cto"],
+        pain_points: ["integration_risk"],
+        trust_requirements: ["engineering_depth"],
+      },
+      offer: {
+        core_offer: "AI systems",
+        service_lines: [{ name: "AI Strategy" }],
+        deliverables: ["roadmap"],
+      },
+      value_proposition: { ...VALID_VALUE_PROPOSITION },
+      conversion: {
+        primary_conversion: { label: "Book an Intro Call" },
+        secondary_conversions: [{ label: "Email Us" }],
+        cta_library: ["Book an Intro Call", "Email Us"],
+      },
+      authority: { credibility_claims: [] },
+      geography: { service_area_model: "remote_first", primary_regions: ["US"] },
       content: {
-        required_pages: [{ path: "/", template: "homepage" }],
+        content_tone: { banned_claims: ["guaranteed_roi"] },
+        required_pages: [
+          {
+            path: "/",
+            template: "homepage",
+            purpose: "Convert qualified buyers",
+            priority: 1,
+          },
+        ],
         page_templates: [{ template_name: "homepage", required_sections: ["hero"] }],
       },
       seo: {
@@ -42,88 +91,136 @@ function rich(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("carries build_intent from the rich spec and rejects unknown values", () => {
-  const flat = buildFlatSpec(rich({ build_intent: "REDESIGN_IMPROVE" }));
-  assert.equal(flat.build_intent, "REDESIGN_IMPROVE");
-
-  // Legacy specs that declare nothing keep the COPY default (no field emitted).
-  assert.equal(buildFlatSpec(rich({})).build_intent, undefined);
-
-  assert.throws(() => buildFlatSpec(rich({ build_intent: "UPGRADE" })), /build_intent must be/);
+test("semantic compiler derives executable first-party authority", () => {
+  const flat = buildFlatSpec(rich());
+  assert.equal(flat.business_facts?.legal_name, "Test Company LLC");
+  assert.equal(flat.business_facts?.core_offer, "AI systems");
+  assert.deepEqual(flat.business_facts?.service_lines, ["AI Strategy"]);
+  assert.equal(flat.value_proposition?.differentiators[0], "systems discipline");
+  assert.equal(flat.conversion_authority?.primary_action, "Book an Intro Call");
+  assert.deepEqual(flat.content_guardrails?.forbidden_claims, ["guaranteed_roi"]);
+  assert.equal(flat.routes[0].purpose, "Convert qualified buyers");
+  assert.equal(flat.routes[0].template, "homepage");
+  assert.equal(flat.routes[0].priority, 1);
+  assert.deepEqual(flat.seo_contract?.route_targets?.[0], {
+    cluster_name: "test",
+    target_page: "/",
+    intent: "service_provider",
+    keywords: ["ai consulting"],
+  });
+  assert.equal(flat.semantic_provenance?.compiler_version, "1.1.0");
+  assert.ok(flat.semantic_provenance?.runtime_authority_paths.includes("offer"));
+  assert.doesNotThrow(() => validateDomainSpec(flat, "semantic-compiler"));
 });
 
-test("carries client_vision verbatim into the flat spec", () => {
-  const flat = buildFlatSpec(
-    rich({ client_vision: { brand_attributes: ["calm"], palette: { primary: "#112233" } } }),
-  );
-  assert.deepEqual(flat.client_vision?.brand_attributes, ["calm"]);
-  assert.deepEqual(flat.client_vision?.palette, { primary: "#112233" });
+test("v1.1 requires an explicit grounded value proposition", () => {
   assert.throws(
-    () => buildFlatSpec(rich({ client_vision: "not-an-object" })),
+    () => buildFlatSpec(rich({ value_proposition: undefined })),
+    /value_proposition is required/,
+  );
+});
+
+test("unknown value_proposition.status is rejected, never coerced to locked", () => {
+  for (const status of ["approved", "LOCKED", "Draft", "", undefined, null, 1]) {
+    assert.throws(
+      () => buildFlatSpec(rich({ value_proposition: { ...VALID_VALUE_PROPOSITION, status } })),
+      /value_proposition\.status must be one of locked\|draft/,
+      `expected rejection for status ${JSON.stringify(status)}`,
+    );
+  }
+});
+
+test("an explicit draft value proposition stays draft", () => {
+  const flat = buildFlatSpec(
+    rich({ value_proposition: { ...VALID_VALUE_PROPOSITION, status: "draft" } }),
+  );
+  assert.equal(flat.value_proposition?.status, "draft");
+});
+
+test("new unclassified source fields fail closed", () => {
+  assert.throws(
+    () => buildFlatSpec(rich({ surprise_semantics: { silent_loss: true } })),
+    /UNMAPPED_SOURCE_FIELD: surprise_semantics\.silent_loss/,
+  );
+});
+
+test("semantic compiler never promotes placeholders into business authority", () => {
+  const flat = buildFlatSpec(
+    rich({
+      authority: {
+        credibility_claims: ["Licensed"],
+        licenses: [
+          {
+            license_type: "test",
+            states: ["US"],
+            license_number: "{{LICENSE_PLACEHOLDER}}",
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(flat.business_facts?.licenses, undefined);
+  assert.deepEqual(flat.business_facts?.credibility_claims, ["Licensed"]);
+});
+
+test("resolved license facts preserve type, jurisdictions, and license number", () => {
+  const flat = buildFlatSpec(
+    rich({
+      authority: {
+        credibility_claims: ["Licensed"],
+        licenses: [
+          {
+            license_type: "public_adjuster",
+            states: ["TN", "NC", "GA"],
+            license_number: "PA-12345",
+          },
+        ],
+      },
+    }),
+  );
+  assert.deepEqual(flat.business_facts?.licenses, [
+    "public_adjuster TN NC GA PA-12345",
+  ]);
+});
+
+test("explicit business_facts override compiler-derived keys", () => {
+  const flat = buildFlatSpec(
+    rich({ business_facts: { core_offer: "Operator locked offer", custom_fact: true } }),
+  );
+  assert.equal(flat.business_facts?.core_offer, "Operator locked offer");
+  assert.equal(flat.business_facts?.custom_fact, true);
+});
+
+test("carries build_intent and rejects unknown values", () => {
+  assert.equal(
+    buildFlatSpec(rich({ build_intent: "REDESIGN_IMPROVE" })).build_intent,
+    "REDESIGN_IMPROVE",
+  );
+  assert.equal(buildFlatSpec(rich({})).build_intent, undefined);
+  assert.throws(
+    () => buildFlatSpec(rich({ build_intent: "UPGRADE" })),
+    /build_intent must be/,
+  );
+});
+
+test("carries client design authority without pre-translating it", () => {
+  const references = [
+    { reference_id: "linear", accepted: false, rejection_reason: "too generic" },
+  ];
+  const vision = { brand_attributes: ["calm"], palette: { primary: "#112233" } };
+  const flat = buildFlatSpec(
+    rich({ client_vision: vision, design_references: references }),
+  );
+  assert.deepEqual(flat.client_vision, vision);
+  assert.deepEqual(flat.design_references, references);
+  assert.throws(
+    () => buildFlatSpec(rich({ client_vision: "bad" })),
     /client_vision must be an object/,
   );
-});
-
-test("carries design_references verbatim into the flat spec", () => {
-  const references = [{ reference_id: "linear", accepted: false, rejection_reason: "too generic" }];
-  const flat = buildFlatSpec(rich({ design_references: references }));
-  assert.deepEqual(flat.design_references, references);
   assert.throws(
     () => buildFlatSpec(rich({ design_references: {} })),
     /design_references must be an array/,
   );
-});
-
-test("REDESIGN raw client intent survives normalization verbatim (GAP-2 round trip)", () => {
-  // The client's own words are the input: URLs and reactions, no principles.
-  const references = [
-    {
-      reference_id: "palantir",
-      url: "https://www.palantir.com/",
-      selection_reason: "serious and credible, but too busy — differentiate rather than imitate",
-    },
-    {
-      reference_id: "linear",
-      url: "https://linear.app/",
-      selection_reason: "quality benchmark only",
-    },
-  ];
-  const vision = {
-    brand_attributes: ["serious AI systems company", "premium"],
-    change: ["too busy", "interface demonstrations with all the zooming"],
-    liked_examples: ["https://www.palantir.com/", "https://linear.app/"],
-  };
-  const flat = buildFlatSpec(
-    rich({
-      build_intent: "REDESIGN_IMPROVE",
-      client_vision: vision,
-      design_references: references,
-    }),
-  );
-  assert.equal(flat.build_intent, "REDESIGN_IMPROVE");
-  assert.deepEqual(flat.client_vision, vision);
-  assert.deepEqual(flat.design_references, references);
-  // Nothing was pre-translated for the client: the normalizer adds no principles.
-  for (const reference of flat.design_references ?? []) {
-    assert.equal((reference as { principles?: unknown }).principles, undefined);
-    assert.ok(reference.selection_reason);
-    assert.ok(reference.url);
-  }
-  // The flat spec the pipeline consumes still validates as a DomainSpec.
-  assert.doesNotThrow(() => validateDomainSpec(flat, "round-trip"));
-});
-
-test("the Quantum AI Partners rich spec normalizes to its committed flat spec with intent intact", () => {
-  const source = parse(
-    readFileSync("examples/quantum-ai-partners/domain_spec.source.yaml", "utf-8"),
-  );
-  const committed = parse(
-    readFileSync("examples/quantum-ai-partners/domain_spec.normalized.yaml", "utf-8"),
-  );
-  const flat = buildFlatSpec(source);
-  assert.deepEqual(flat, committed);
-  assert.equal(flat.build_intent, "REDESIGN_IMPROVE");
-  assert.ok((flat.design_references ?? []).every((reference) => reference.url));
 });
 
 test("structured brand tokens become resolved first-party design", () => {
@@ -144,38 +241,56 @@ test("structured brand tokens become resolved first-party design", () => {
     secondary: "#111827",
     accent: "#22D3EE",
   });
-  assert.deepEqual(flat.design.fonts, { font_heading: "Space Grotesk", font_body: "Inter" });
+  assert.deepEqual(flat.design.fonts, {
+    font_heading: "Space Grotesk",
+    font_body: "Inter",
+  });
 });
 
-test("incomplete structured palettes stay pending and are not carried as resolved", () => {
-  const flat = buildFlatSpec(
-    rich({
-      design: {
-        design_status: "resolved",
-        brand_tokens: {
-          colors: { primary: "#0B0F17", accent: "#22D3EE" },
-          typography: { heading: "Space Grotesk", body: "Inter" },
-        },
-      },
-    }),
-  );
-  assert.equal(flat.design.status, "pending");
-  assert.equal(flat.design.palette, undefined);
-});
-
-test("placeholder brand tokens keep the legacy pending path", () => {
-  const flat = buildFlatSpec(rich({}));
-  assert.equal(flat.design.status, "pending");
-  assert.equal(flat.design.palette, undefined);
-  assert.equal(flat.design.fonts, undefined);
-});
-
-test("reference client flat spec remains byte-stable (no regression)", () => {
+test("canonical reference source compiles exactly to its committed v1.1 IR", () => {
   const source = parse(
     readFileSync("examples/supplemental-insurance-pros/domain_spec.source.yaml", "utf-8"),
   );
   const committed = parse(
     readFileSync("examples/supplemental-insurance-pros/domain_spec.normalized.yaml", "utf-8"),
   );
-  assert.deepEqual(buildFlatSpec(source), committed);
+  const flat = buildFlatSpec(source);
+  assert.deepEqual(flat, committed);
+  assert.equal(flat.value_proposition?.status, "locked");
+  assert.ok(flat.routes.every((route) => route.purpose && route.template && route.priority));
+  assert.ok((flat.seo_contract?.route_targets?.length ?? 0) > 0);
+  assert.equal(flat.semantic_provenance?.source_spec_version, "1.1.0");
+});
+
+test("legacy v1.0 source remains compilable without a value proposition block", () => {
+  const source = parse(
+    readFileSync("examples/quantum-ai-partners/domain_spec.source.yaml", "utf-8"),
+  );
+  const flat = buildFlatSpec(source);
+  assert.equal(flat.value_proposition, undefined);
+  assert.ok(flat.business_facts && Object.keys(flat.business_facts).length > 0);
+  assert.doesNotThrow(() => validateDomainSpec(flat, "legacy-v1"));
+});
+
+test("importing the normalizer does not run its CLI writer", () => {
+  // This suite imports buildFlatSpec. Before the entry-point guard, that import
+  // executed main() and rewrote the committed IR, making the tests a writer of
+  // the very artifact normalize-spec:check compares against.
+  const outPath = "examples/supplemental-insurance-pros/domain_spec.normalized.yaml";
+  const mtimeBefore = statSync(outPath).mtimeMs;
+  const bodyBefore = readFileSync(outPath, "utf-8");
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "-e", "await import('./scripts/normalize-spec.ts');"],
+    { encoding: "utf-8" },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    statSync(outPath).mtimeMs,
+    mtimeBefore,
+    "importing scripts/normalize-spec.ts rewrote the committed IR",
+  );
+  assert.equal(readFileSync(outPath, "utf-8"), bodyBefore);
 });

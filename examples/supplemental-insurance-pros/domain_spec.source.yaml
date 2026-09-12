@@ -1,7 +1,7 @@
 domain_spec:
   metadata:
     spec_id: supplementalinsurancepros_com
-    version: 1.0.0
+    version: 1.1.0
     created_date: 2026-06-12
     status: build_ready
     business_model_type: lead_generation
@@ -14,6 +14,7 @@ domain_spec:
     - Converted from legacy flat sample into strict canonical domain_spec wrapper.
     - Astro/Vercel locked.
     - AccuLynx retained as phase_2_hardened_sync and non-launch-blocking.
+    - v1.1 locks the first-party value proposition and semantic-compiler authority contract.
   identity:
     business_name: Supplemental Insurance Pros
     legal_name: Supplemental Insurance Pros
@@ -119,6 +120,38 @@ domain_spec:
     guarantees:
     - no_claim_payment_guarantee
     - no_carrier_outcome_guarantee
+  value_proposition:
+    status: locked
+    target_customer:
+    - Homeowners who need help reviewing a property insurance estimate or claim supplement.
+    - Contractors who need supplement support and organized documentation for covered repair scope.
+    problem:
+    - Property claim estimates may omit legitimate covered scope or cost items.
+    - Supplement documentation can be incomplete, disorganized, or difficult to understand.
+    - Homeowners and contractors need claim-literate support without promises about carrier outcomes.
+    outcome:
+    - Identify potential scope gaps in the available claim or estimate information.
+    - Organize documentation into a supplement-ready structure.
+    - Understand the supplementing process and realistic next steps.
+    mechanism:
+    - Licensed public adjuster-led estimate and claim-scope review.
+    - Scope-gap analysis and supplement documentation guidance.
+    - Separate homeowner and contractor support paths.
+    differentiators:
+    - Licensed public adjuster-led service.
+    - Over 20 years of experience.
+    - Support for both homeowners and contractors.
+    - Conservative compliance-first claim language.
+    reasons_to_believe:
+    - Licensed Public Adjuster
+    - Over 20 years of experience
+    - Homeowner and contractor support
+    boundaries:
+    - No guaranteed claim payment.
+    - No guaranteed claim increase.
+    - No guaranteed carrier approval.
+    - No carrier outcome promises.
+    - No legal advice unless explicitly approved.
   conversion:
     primary_conversion:
       label: Request a Claim Review
