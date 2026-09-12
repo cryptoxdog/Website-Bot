@@ -1,4 +1,4 @@
-// L9_META: layer=pipeline, role=context_carrier, status=active, version=3.0.0
+// L9_META: layer=pipeline, role=context_carrier, status=active, version=3.1.0
 import { resolve } from "node:path";
 import type {
   CompetitiveLandscapeArtifact,
@@ -42,11 +42,50 @@ export interface DeployTarget {
   seoBotVercelDeployHookRef?: string;
 }
 
+export interface SeoRouteTarget {
+  cluster_name: string;
+  target_page: string;
+  intent: string;
+  keywords: string[];
+}
+
 export interface SeoContract {
   site_url?: string;
   phone?: string;
   lead_form_action?: string;
   target_keywords?: string[];
+  route_targets?: SeoRouteTarget[];
+}
+
+export type SemanticDisposition = "RUNTIME" | "GATE" | "PROVENANCE";
+
+export interface SemanticProvenance {
+  source_spec_version: string;
+  compiler_version: string;
+  runtime_authority_paths: string[];
+  gate_paths: string[];
+  provenance_paths: string[];
+}
+
+export interface ValuePropositionContract {
+  status: "locked" | "draft";
+  target_customer: string[];
+  problem: string[];
+  outcome: string[];
+  mechanism: string[];
+  differentiators: string[];
+  reasons_to_believe: string[];
+  boundaries: string[];
+}
+
+export interface ConversionAuthority {
+  primary_action: string;
+  secondary_actions: string[];
+  cta_library: string[];
+}
+
+export interface ContentGuardrails {
+  forbidden_claims: string[];
 }
 
 /** Source website to crawl for reusable assets. Off unless explicitly enabled. */
@@ -113,13 +152,26 @@ export interface DomainSpec {
     palette?: Record<string, string>;
     fonts?: Record<string, string>;
   };
-  routes: Array<{ slug: string; title: string; components: string[]; noindex?: boolean }>;
+  routes: Array<{
+    slug: string;
+    title: string;
+    components: string[];
+    purpose?: string;
+    template?: string;
+    priority?: number;
+    noindex?: boolean;
+  }>;
   seo_contract?: SeoContract;
   /** Operator-verified business facts (frozen case authority). Each key
    * becomes a VerifiedBusinessFact; values may be string | boolean | number
    * | string[]. Literal phrases here are what claim grounding validates
    * against (e.g. hours: "24/7", free_inspection: true). */
   business_facts?: Record<string, string | boolean | number | string[]>;
+  /** First-party commercial authority compiled from the rich source. */
+  value_proposition?: ValuePropositionContract;
+  conversion_authority?: ConversionAuthority;
+  content_guardrails?: ContentGuardrails;
+  semantic_provenance?: SemanticProvenance;
   wom_flags?: Array<{ key: string; value: string; severity: "error" | "warning" | "info" }>;
   deploy?: {
     github_repo: string;
