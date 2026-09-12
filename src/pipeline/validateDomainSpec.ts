@@ -40,8 +40,12 @@ function isStringList(value: unknown): value is string[] {
  * normalization anywhere the compiler has no rule that strips them. They must
  * never reach a stage that treats first-party semantics as locked authority,
  * so spec load rejects them instead of publishing the literal token.
+ *
+ * Exported so the spec normalizer shares one definition with the gate that
+ * validates its output: if the two drifted, the compiler could emit an IR its
+ * own validation step then rejects.
  */
-function hasPlaceholder(value: unknown): boolean {
+export function hasPlaceholder(value: unknown): boolean {
   return typeof value === "string" && value.includes("{{") && value.includes("}}");
 }
 
@@ -336,13 +340,12 @@ function validateConversionAuthority(
     !hasPlaceholder(value.primary_action),
     "conversion_authority.primary_action must not contain unresolved {{PLACEHOLDER}} text",
   );
+  // ConversionAuthority declares all three fields; the compiler always emits
+  // the lists even when empty, so a missing one means a hand-edited IR.
   for (const field of ["secondary_actions", "cta_library"] as const) {
     const entry = value[field];
-    if (entry === undefined) continue;
     if (!isStringList(entry)) {
-      errors.push(
-        `conversion_authority.${field}, when present, must be an array of non-empty strings`,
-      );
+      errors.push(`conversion_authority.${field} must be an array of non-empty strings`);
       continue;
     }
     check(

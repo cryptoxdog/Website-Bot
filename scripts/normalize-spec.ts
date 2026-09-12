@@ -10,7 +10,7 @@ import type {
   SemanticProvenance,
   ValuePropositionContract,
 } from "../src/pipeline/BuildContext.js";
-import { validateDomainSpec } from "../src/pipeline/validateDomainSpec.js";
+import { hasPlaceholder, validateDomainSpec } from "../src/pipeline/validateDomainSpec.js";
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -41,10 +41,6 @@ function deepEqual(a: unknown, b: unknown): boolean {
 function titleFromPath(path: string): string {
   if (path === "/") return "Home";
   return path.replace(/^\//, "").split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-}
-
-function hasPlaceholder(v: unknown): boolean {
-  return typeof v === "string" && v.includes("{{") && v.includes("}}");
 }
 
 function hasPlaceholderDeep(v: unknown): boolean {
