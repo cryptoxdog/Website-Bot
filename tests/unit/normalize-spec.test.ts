@@ -143,6 +143,26 @@ test("semantic compiler never promotes placeholders into business authority", ()
   assert.deepEqual(flat.business_facts?.credibility_claims, ["Licensed"]);
 });
 
+test("resolved license facts preserve type, jurisdictions, and license number", () => {
+  const flat = buildFlatSpec(
+    rich({
+      authority: {
+        credibility_claims: ["Licensed"],
+        licenses: [
+          {
+            license_type: "public_adjuster",
+            states: ["TN", "NC", "GA"],
+            license_number: "PA-12345",
+          },
+        ],
+      },
+    }),
+  );
+  assert.deepEqual(flat.business_facts?.licenses, [
+    "public_adjuster TN NC GA PA-12345",
+  ]);
+});
+
 test("explicit business_facts override compiler-derived keys", () => {
   const flat = buildFlatSpec(
     rich({ business_facts: { core_offer: "Operator locked offer", custom_fact: true } }),
