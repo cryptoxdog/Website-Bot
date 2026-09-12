@@ -31,7 +31,7 @@ const portfolio: PatternPortfolio = {
 
 function semanticSpec(): DomainSpec {
   return {
-    client_id: "semantic-test",
+    client_id: "c1",
     business_name: "Semantic Test",
     vertical: "professional_services",
     geography: { states: ["NC"], primary_state: "NC" },
