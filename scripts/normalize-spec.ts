@@ -1,16 +1,10 @@
-// L9_META: layer=cli, role=spec_normalizer, status=active, version=1.0.0
+// L9_META: layer=cli, role=spec_normalizer, status=active, version=1.1.0
 //
-// Deterministically transform a rich NESTED authoring spec (…/domain_spec.source.yaml)
-// into the FLAT DomainSpec the pipeline consumes (…/domain_spec.normalized.yaml).
-// Fully spec-driven: routes/components/titles come from the source's
-// required_pages + page_templates, so new clients author only the rich format
-// and the flat file is generated, never hand-maintained. Defaults target the
-// bundled reference client under examples/supplemental-insurance-pros/.
-//
-// Usage (both `--in <p>` and `--in=<p>` forms are accepted):
-//   tsx scripts/normalize-spec.ts                 # write the reference client's flat spec (examples/…)
-//   tsx scripts/normalize-spec.ts --check         # verify the committed flat file matches (CI guard)
-//   tsx scripts/normalize-spec.ts --in <p> --out <p>
+// Deterministically transform a rich NESTED authoring spec (.../domain_spec.source.yaml)
+// into the FLAT DomainSpec the pipeline consumes (.../domain_spec.normalized.yaml).
+// Rich authoring semantics must terminate in runtime authority, validation gates,
+// or explicit provenance. The compiler derives executable runtime facts from
+// first-party business semantics instead of merely copying rich blocks verbatim.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parse, stringify } from "yaml";
@@ -21,7 +15,6 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** Read a flag value supporting both `--name=value` and `--name value` forms. */
 function getArg(args: string[], name: string): string | undefined {
   const eq = args.find((a) => a.startsWith(`${name}=`));
   if (eq) return eq.slice(name.length + 1);
@@ -30,8 +23,6 @@ function getArg(args: string[], name: string): string | undefined {
   return undefined;
 }
 
-/** Order-independent structural equality (objects compared key-by-key, not by
- *  serialized string) so `--check` fails only on real semantic drift. */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== typeof b || a === null || b === null) return false;
@@ -50,9 +41,6 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-// Generic path→title fallback. '/' → 'Home' is a universal site convention; any
-// other display title a client wants (e.g. 'FAQ' vs 'Faq') is authored as an
-// explicit `title:` on the source `required_pages` entry, not hardcoded here.
 function titleFromPath(path: string): string {
   if (path === "/") return "Home";
   return path
@@ -74,6 +62,7 @@ function hasPlaceholderDeep(v: unknown): boolean {
 }
 
 const REQUIRED_PALETTE_KEYS = ["primary", "secondary"] as const;
+const BUILD_INTENTS = ["COPY", "REDESIGN_IMPROVE"] as const;
 
 function paletteIsComplete(colors: Record<string, unknown>): boolean {
   return REQUIRED_PALETTE_KEYS.every((key) => {
@@ -82,14 +71,111 @@ function paletteIsComplete(colors: Record<string, unknown>): boolean {
   });
 }
 
+function setFact(
+  facts: Record<string, string | boolean | number | string[]>,
+  key: string,
+  value: unknown,
+): void {
+  if (value === undefined || value === null || hasPlaceholderDeep(value)) return;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) facts[key] = trimmed;
+    return;
+  }
+  if (typeof value === "boolean" || typeof value === "number") {
+    facts[key] = value;
+    return;
+  }
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    const cleaned = value.map((entry) => entry.trim()).filter(Boolean);
+    if (cleaned.length > 0) facts[key] = cleaned;
+  }
+}
+
+/**
+ * Compile rich first-party business semantics into the existing executable
+ * business_facts authority. This is semantic compilation, not a raw copy.
+ * Only explicit source assertions are admitted. Inference may combine declared
+ * fields, but it must never invent credentials, outcomes, or proof.
+ */
+function deriveBusinessFacts(ds: any): DomainSpec["business_facts"] {
+  const facts: NonNullable<DomainSpec["business_facts"]> = {};
+  const positioning = ds.identity?.brand_positioning ?? {};
+
+  setFact(facts, "legal_name", ds.identity?.legal_name);
+  setFact(facts, "tagline", ds.identity?.tagline);
+  setFact(facts, "brand_positioning", positioning.one_liner);
+  setFact(facts, "primary_value", positioning.primary_value);
+  setFact(facts, "competitive_angle", ds.market?.competitive_angle);
+  setFact(facts, "core_offer", ds.offer?.core_offer);
+  setFact(facts, "offer_type", ds.offer?.offer_type);
+  setFact(facts, "pricing_visibility", ds.offer?.pricing_visibility);
+  setFact(facts, "deliverables", ds.offer?.deliverables);
+  setFact(facts, "decision_makers", ds.audience?.decision_makers);
+  setFact(facts, "pain_points", ds.audience?.pain_points);
+  setFact(facts, "trust_requirements", ds.audience?.trust_requirements);
+  setFact(facts, "service_area_model", ds.geography?.service_area_model);
+
+  const serviceLines = Array.isArray(ds.offer?.service_lines) ? ds.offer.service_lines : [];
+  const serviceNames = serviceLines
+    .map((line: any) => line?.name)
+    .filter((name: unknown): name is string => typeof name === "string" && name.trim().length > 0);
+  setFact(facts, "service_lines", serviceNames);
+
+  const credibilityClaims = Array.isArray(ds.authority?.credibility_claims)
+    ? ds.authority.credibility_claims
+    : [];
+  setFact(facts, "credibility_claims", credibilityClaims);
+
+  const licenses = Array.isArray(ds.authority?.licenses) ? ds.authority.licenses : [];
+  const licensePhrases = licenses
+    .map((license: any) => {
+      if (!isObject(license) || hasPlaceholderDeep(license)) return undefined;
+      const parts = [license.type, license.state, license.license_number]
+        .filter((part) => typeof part === "string" && part.trim())
+        .map((part) => part.trim());
+      return parts.length > 0 ? parts.join(" ") : undefined;
+    })
+    .filter((value: unknown): value is string => typeof value === "string");
+  setFact(facts, "licenses", licensePhrases);
+
+  if (isObject(ds.business_facts)) {
+    for (const [key, value] of Object.entries(ds.business_facts)) setFact(facts, key, value);
+  }
+
+  return Object.keys(facts).length > 0 ? facts : undefined;
+}
+
+function compileSemanticProvenance(ds: any): Record<string, unknown> {
+  return {
+    source_spec_version: ds.metadata?.version ?? "1.0.0",
+    compiler_version: "1.1.0",
+    runtime_authority_paths: [
+      "identity.brand_positioning",
+      "market.competitive_angle",
+      "audience",
+      "offer",
+      "authority",
+      "geography",
+      "conversion",
+      "content.required_pages",
+      "seo",
+      "client_vision",
+      "design_references",
+      "design.brand_tokens",
+      "assets",
+    ],
+    gate_paths: ["wom_flags", "compliance", "design.design_status"],
+    provenance_paths: ["metadata", "content.page_templates"],
+  };
+}
+
 export function buildFlatSpec(nested: unknown): DomainSpec {
   const ds = (
     isObject(nested) && "domain_spec" in nested ? (nested as any).domain_spec : nested
   ) as any;
 
   const primaryRegions: string[] = ds.geography.primary_regions;
-
-  // design: pending if the design is a placeholder or any brand token is a placeholder.
   const brandTokens = ds.design?.brand_tokens ?? {};
   const structuredColors = isObject(brandTokens.colors)
     ? (brandTokens.colors as Record<string, unknown>)
@@ -99,10 +185,6 @@ export function buildFlatSpec(nested: unknown): DomainSpec {
     hasPlaceholderDeep(brandTokens) ||
     (structuredColors !== undefined && !paletteIsComplete(structuredColors));
 
-  // routes: each required_page resolves its components from its page_template
-  // (by template_name, else by applies_to), or from an explicit `sections` list
-  // on the page. Title comes from the page's explicit `title`, else the generic
-  // path→title fallback. Fully spec-driven — no per-client sets baked into the tool.
   const templates: Array<{
     template_name?: string;
     applies_to?: string[];
@@ -112,21 +194,10 @@ export function buildFlatSpec(nested: unknown): DomainSpec {
     routeFromRequiredPage(p, templates),
   );
 
-  // lead_form_action: the concrete POST endpoint for lead forms. Authored at
-  // conversion.lead_capture.form_action in the nested spec. validateDomainSpec
-  // requires it whenever a route renders contact_form, so the transform carries
-  // it through (placeholders excluded — those surface as wom_flags instead).
   const leadCapture = ds.conversion?.lead_capture ?? {};
   const leadFormAction: unknown = leadCapture.form_action;
   const contact = ds.identity?.contact_placeholders ?? {};
   const seoContract = buildSeoContract(ds, leadFormAction, contact);
-
-  // wom_flags: emit a flag ONLY for items that are still UNRESOLVED (ordered as
-  // reviewed in SD2). Critically, the error-severity gates (license number +
-  // required disclaimers) are conditional on the underlying nested value still
-  // being a `{{…PLACEHOLDER}}` token — once an operator fills in the real value
-  // in inputs/, the flag drops and UnknownResolverStage stops blocking. Emitting
-  // them unconditionally would leave the pipeline permanently unable to proceed.
   const womFlags = buildWomFlags(ds, contact, leadFormAction, designPending, primaryRegions);
 
   const flat: DomainSpec = {
@@ -139,6 +210,11 @@ export function buildFlatSpec(nested: unknown): DomainSpec {
     seo_contract: seoContract,
     wom_flags: womFlags,
   };
+
+  const businessFacts = deriveBusinessFacts(ds);
+  if (businessFacts) flat.business_facts = businessFacts;
+  flat.semantic_provenance = compileSemanticProvenance(ds);
+
   carryStructuredAssets(ds, flat);
   carryBuildIntent(ds, flat);
   carryClientVision(ds, flat);
@@ -147,14 +223,6 @@ export function buildFlatSpec(nested: unknown): DomainSpec {
   return flat;
 }
 
-const BUILD_INTENTS = ["COPY", "REDESIGN_IMPROVE"] as const;
-
-/**
- * build_intent: carried from the rich spec when authored. Redesign clients
- * must be able to declare the transformation intent in the same document that
- * declares everything else; the flat file is generated, never hand-maintained,
- * so hand-adding it there was the only alternative.
- */
 function carryBuildIntent(ds: any, flat: DomainSpec): void {
   const intent = ds.build_intent;
   if (intent === undefined) return;
@@ -166,12 +234,6 @@ function carryBuildIntent(ds: any, flat: DomainSpec): void {
   flat.build_intent = intent;
 }
 
-/**
- * client_vision / design_references: first-party design authority blocks
- * (ADR-0018, WBV2-003 / WBV2-004). Carried verbatim — fail-closed validation
- * of a malformed declaration is the design-authority resolver's job at
- * pipeline time, not the normalizer's.
- */
 function carryClientVision(ds: any, flat: DomainSpec): void {
   if (ds.client_vision === undefined) return;
   if (!isObject(ds.client_vision)) throw new Error("client_vision must be an object");
@@ -184,12 +246,6 @@ function carryDesignReferences(ds: any, flat: DomainSpec): void {
   flat.design_references = ds.design_references as DomainSpec["design_references"];
 }
 
-/**
- * Structured brand tokens: when the rich spec authors colors/typography as
- * maps (rather than {{PLACEHOLDER}} strings), they are first-party resolved
- * design the pipeline consumes directly (WBV2-007's first-party route).
- * Placeholder strings keep the legacy pending → LLM-generated path.
- */
 function carryStructuredDesignTokens(ds: any, flat: DomainSpec): void {
   const brandTokens = ds.design?.brand_tokens ?? {};
   const colors = brandTokens.colors;
@@ -222,17 +278,25 @@ function routeFromRequiredPage(
     title: p.title ?? titleFromPath(p.path),
     components,
   };
+  if (typeof p.purpose === "string" && p.purpose.trim()) route.purpose = p.purpose.trim();
+  if (typeof p.template === "string" && p.template.trim()) route.template = p.template.trim();
+  if (typeof p.priority === "number") route.priority = p.priority;
   if (p.noindex === true) route.noindex = true;
   return route;
 }
 
 function buildSeoContract(ds: any, leadFormAction: unknown, contact: any): Record<string, unknown> {
-  // seo_contract: flatten keyword clusters + carry rules; annotate per-route schema application.
   const clusters = [ds.seo.primary_keyword_cluster, ...(ds.seo.secondary_keyword_clusters ?? [])];
   const targetKeywords = clusters.flatMap((c: any) => c.keywords as string[]);
   const seoContract: Record<string, unknown> = {
     site_url: ds.identity.canonical_url,
     target_keywords: targetKeywords,
+    route_targets: clusters.map((cluster: any) => ({
+      cluster_name: cluster.cluster_name,
+      target_page: cluster.target_page,
+      intent: cluster.intent,
+      keywords: cluster.keywords,
+    })),
     metadata_rules: ds.seo.metadata_rules,
     schema_rules: ds.seo.schema_rules,
     schema_application: "per_route",
@@ -313,14 +377,6 @@ function buildWomFlags(
 }
 
 function carryStructuredAssets(ds: any, flat: DomainSpec): void {
-  // assets: carried through verbatim when authored. The flat `assets` block is
-  // already in pipeline shape (sourceSite/providedImages/imageSlots), so there is
-  // nothing to derive — losing it here would silently drop the image pipeline
-  // inputs from the normalized spec the pipeline actually consumes.
-  // Only a STRUCTURED asset block (sourceSite / providedImages / imageSlots /
-  // generation) is carried. The legacy authoring format also uses `assets` for a
-  // freeform {logo, photos, icons} note; that shape is not the pipeline contract
-  // and is intentionally ignored so it never reaches the normalized spec.
   if (
     isObject(ds.assets) &&
     ["sourceSite", "providedImages", "imageSlots", "generation"].some(
@@ -334,15 +390,13 @@ function carryStructuredAssets(ds: any, flat: DomainSpec): void {
 function main() {
   const args = process.argv.slice(2);
   const check = args.includes("--check");
-  // Defaults point at the bundled reference client under examples/. Real client
-  // builds pass explicit --in/--out (or CLIENT_ID/spec_path via the workflows).
   const inPath =
     getArg(args, "--in") ?? "examples/supplemental-insurance-pros/domain_spec.source.yaml";
   const outPath =
     getArg(args, "--out") ?? "examples/supplemental-insurance-pros/domain_spec.normalized.yaml";
 
   const flat = buildFlatSpec(parse(readFileSync(inPath, "utf-8")));
-  validateDomainSpec(flat, `${inPath} (normalized)`); // fail loud if the transform ever produces an invalid spec
+  validateDomainSpec(flat, `${inPath} (normalized)`);
 
   if (check) {
     const committed = parse(readFileSync(outPath, "utf-8"));
@@ -350,7 +404,6 @@ function main() {
       console.error(
         `normalize-spec --check FAILED: ${outPath} is stale.\nRegenerate with: tsx scripts/normalize-spec.ts`,
       );
-      // Show the first differing key for a quick diagnosis.
       for (const k of Object.keys(flat)) {
         if (!deepEqual((flat as any)[k], (committed as any)?.[k])) {
           console.error(`  first diff at key: ${k}`);
