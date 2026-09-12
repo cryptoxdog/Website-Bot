@@ -244,9 +244,9 @@ function compileSemanticProvenance(ds: any): SemanticProvenance {
   return {
     source_spec_version: String(ds.metadata?.version ?? "1.0.0"),
     compiler_version: "1.1.0",
-    runtime_authority_paths: [...buckets.RUNTIME].sort(),
-    gate_paths: [...buckets.GATE].sort(),
-    provenance_paths: [...buckets.PROVENANCE].sort(),
+    runtime_authority_paths: [...buckets.RUNTIME].sort((a, b) => a.localeCompare(b)),
+    gate_paths: [...buckets.GATE].sort((a, b) => a.localeCompare(b)),
+    provenance_paths: [...buckets.PROVENANCE].sort((a, b) => a.localeCompare(b)),
   };
 }
 
