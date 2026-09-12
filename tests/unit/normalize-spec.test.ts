@@ -1,6 +1,7 @@
 // L9_META: layer=test, role=unit, status=active, version=1.1.0
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
 import { parse } from "yaml";
 import { buildFlatSpec } from "../../scripts/normalize-spec.js";
@@ -269,4 +270,27 @@ test("legacy v1.0 source remains compilable without a value proposition block", 
   assert.equal(flat.value_proposition, undefined);
   assert.ok(flat.business_facts && Object.keys(flat.business_facts).length > 0);
   assert.doesNotThrow(() => validateDomainSpec(flat, "legacy-v1"));
+});
+
+test("importing the normalizer does not run its CLI writer", () => {
+  // This suite imports buildFlatSpec. Before the entry-point guard, that import
+  // executed main() and rewrote the committed IR, making the tests a writer of
+  // the very artifact normalize-spec:check compares against.
+  const outPath = "examples/supplemental-insurance-pros/domain_spec.normalized.yaml";
+  const mtimeBefore = statSync(outPath).mtimeMs;
+  const bodyBefore = readFileSync(outPath, "utf-8");
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "-e", "await import('./scripts/normalize-spec.ts');"],
+    { encoding: "utf-8" },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    statSync(outPath).mtimeMs,
+    mtimeBefore,
+    "importing scripts/normalize-spec.ts rewrote the committed IR",
+  );
+  assert.equal(readFileSync(outPath, "utf-8"), bodyBefore);
 });

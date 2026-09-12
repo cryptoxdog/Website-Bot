@@ -1,6 +1,7 @@
 // L9_META: layer=cli, role=spec_normalizer, status=active, version=1.1.0
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 import type {
   ContentGuardrails,
@@ -402,4 +403,20 @@ function main() {
   console.log(`Wrote ${outPath} from ${inPath}.`);
 }
 
-main();
+/**
+ * True only when this file is the process entry point. Without the guard,
+ * `main()` ran on import: the unit tests import buildFlatSpec, which silently
+ * rewrote the committed IR and made the suite a writer of the artifact its own
+ * CI gate compares against.
+ */
+function invokedAsCli(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli()) main();
