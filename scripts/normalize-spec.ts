@@ -1,14 +1,19 @@
 // L9_META: layer=cli, role=spec_normalizer, status=active, version=1.1.0
 //
-// Deterministically transform a rich NESTED authoring spec (.../domain_spec.source.yaml)
-// into the FLAT DomainSpec the pipeline consumes (.../domain_spec.normalized.yaml).
-// Rich authoring semantics must terminate in runtime authority, validation gates,
-// or explicit provenance. The compiler derives executable runtime facts from
-// first-party business semantics instead of merely copying rich blocks verbatim.
+// Deterministically compile a rich authoring DomainSpec into the executable
+// normalized DomainSpec consumed by the pipeline. Rich source semantics must
+// terminate in runtime authority, validation gates, or explicit provenance.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parse, stringify } from "yaml";
-import type { DomainSpec } from "../src/pipeline/BuildContext.js";
+import type {
+  ContentGuardrails,
+  ConversionAuthority,
+  DomainSpec,
+  SemanticDisposition,
+  SemanticProvenance,
+  ValuePropositionContract,
+} from "../src/pipeline/BuildContext.js";
 import { validateDomainSpec } from "../src/pipeline/validateDomainSpec.js";
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -71,6 +76,14 @@ function paletteIsComplete(colors: Record<string, unknown>): boolean {
   });
 }
 
+function strings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function setFact(
   facts: Record<string, string | boolean | number | string[]>,
   key: string,
@@ -87,17 +100,11 @@ function setFact(
     return;
   }
   if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
-    const cleaned = value.map((entry) => entry.trim()).filter(Boolean);
+    const cleaned = (value as string[]).map((entry) => entry.trim()).filter(Boolean);
     if (cleaned.length > 0) facts[key] = cleaned;
   }
 }
 
-/**
- * Compile rich first-party business semantics into the existing executable
- * business_facts authority. This is semantic compilation, not a raw copy.
- * Only explicit source assertions are admitted. Inference may combine declared
- * fields, but it must never invent credentials, outcomes, or proof.
- */
 function deriveBusinessFacts(ds: any): DomainSpec["business_facts"] {
   const facts: NonNullable<DomainSpec["business_facts"]> = {};
   const positioning = ds.identity?.brand_positioning ?? {};
@@ -121,20 +128,16 @@ function deriveBusinessFacts(ds: any): DomainSpec["business_facts"] {
     .map((line: any) => line?.name)
     .filter((name: unknown): name is string => typeof name === "string" && name.trim().length > 0);
   setFact(facts, "service_lines", serviceNames);
-
-  const credibilityClaims = Array.isArray(ds.authority?.credibility_claims)
-    ? ds.authority.credibility_claims
-    : [];
-  setFact(facts, "credibility_claims", credibilityClaims);
+  setFact(facts, "credibility_claims", ds.authority?.credibility_claims);
 
   const licenses = Array.isArray(ds.authority?.licenses) ? ds.authority.licenses : [];
   const licensePhrases = licenses
     .map((license: any) => {
       if (!isObject(license) || hasPlaceholderDeep(license)) return undefined;
-      const parts = [license.type, license.state, license.license_number]
-        .filter((part) => typeof part === "string" && part.trim())
+      const parts = [license.license_type, license.type, license.state, license.license_number]
+        .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
         .map((part) => part.trim());
-      return parts.length > 0 ? parts.join(" ") : undefined;
+      return parts.length > 0 ? [...new Set(parts)].join(" ") : undefined;
     })
     .filter((value: unknown): value is string => typeof value === "string");
   setFact(facts, "licenses", licensePhrases);
@@ -142,31 +145,168 @@ function deriveBusinessFacts(ds: any): DomainSpec["business_facts"] {
   if (isObject(ds.business_facts)) {
     for (const [key, value] of Object.entries(ds.business_facts)) setFact(facts, key, value);
   }
-
   return Object.keys(facts).length > 0 ? facts : undefined;
 }
 
-function compileSemanticProvenance(ds: any): Record<string, unknown> {
+function compileValueProposition(ds: any): ValuePropositionContract | undefined {
+  if (isObject(ds.value_proposition)) {
+    const vp = ds.value_proposition;
+    const status = vp.status === "draft" ? "draft" : "locked";
+    const compiled: ValuePropositionContract = {
+      status,
+      target_customer: strings(vp.target_customer),
+      problem: strings(vp.problem),
+      outcome: strings(vp.outcome),
+      mechanism: strings(vp.mechanism),
+      differentiators: strings(vp.differentiators),
+      reasons_to_believe: strings(vp.reasons_to_believe).filter((value) => !hasPlaceholder(value)),
+      boundaries: strings(vp.boundaries),
+    };
+    for (const [key, value] of Object.entries(compiled)) {
+      if (key !== "status" && Array.isArray(value) && value.length === 0) {
+        throw new Error(`value_proposition.${key} must contain at least one grounded entry`);
+      }
+    }
+    return compiled;
+  }
+
+  // Legacy 1.0 sources remain supported. New v1.1 sources must explicitly
+  // declare the commercial proposition rather than letting the compiler invent it.
+  if (String(ds.metadata?.version ?? "1.0.0").startsWith("1.1")) {
+    throw new Error("value_proposition is required for DomainSpec source v1.1");
+  }
+  return undefined;
+}
+
+function compileConversionAuthority(ds: any): ConversionAuthority | undefined {
+  const primary = ds.conversion?.primary_conversion?.label;
+  if (typeof primary !== "string" || !primary.trim()) return undefined;
+  const secondary = Array.isArray(ds.conversion?.secondary_conversions)
+    ? ds.conversion.secondary_conversions
+        .map((entry: any) => entry?.label)
+        .filter((entry: unknown): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry: string) => entry.trim())
+    : [];
   return {
-    source_spec_version: ds.metadata?.version ?? "1.0.0",
+    primary_action: primary.trim(),
+    secondary_actions: secondary,
+    cta_library: strings(ds.conversion?.cta_library),
+  };
+}
+
+function compileContentGuardrails(ds: any): ContentGuardrails | undefined {
+  const forbidden = [
+    ...strings(ds.content?.content_tone?.banned_claims),
+    ...strings(ds.compliance?.prohibited_claims),
+  ];
+  const unique = [...new Set(forbidden)].sort((a, b) => a.localeCompare(b));
+  return unique.length > 0 ? { forbidden_claims: unique } : undefined;
+}
+
+function leafPaths(value: unknown, prefix = ""): string[] {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return prefix ? [prefix] : [];
+    return value.flatMap((entry) => leafPaths(entry, `${prefix}[]`));
+  }
+  if (isObject(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return prefix ? [prefix] : [];
+    return entries.flatMap(([key, child]) => leafPaths(child, prefix ? `${prefix}.${key}` : key));
+  }
+  return prefix ? [prefix] : [];
+}
+
+function dispositionFor(path: string): SemanticDisposition | undefined {
+  const runtimePrefixes = [
+    "build_intent",
+    "business_facts",
+    "value_proposition",
+    "identity.business_name",
+    "identity.legal_name",
+    "identity.canonical_url",
+    "identity.tagline",
+    "identity.brand_positioning",
+    "identity.contact_placeholders",
+    "market.niche",
+    "market.competitive_angle",
+    "market.buying_triggers",
+    "market.objections",
+    "audience",
+    "offer",
+    "conversion",
+    "authority.credibility_claims",
+    "authority.experience",
+    "authority.licenses",
+    "geography.primary_regions",
+    "geography.service_area_model",
+    "content.required_pages",
+    "content.page_templates",
+    "content.content_tone.banned_claims",
+    "seo",
+    "design.brand_tokens",
+    "client_vision",
+    "design_references",
+  ];
+  const gatePrefixes = [
+    "authority.licenses",
+    "compliance",
+    "validation.blocking_gates",
+    "design.design_status",
+    "conversion.lead_capture.form_action",
+  ];
+  const provenancePrefixes = [
+    "metadata",
+    "identity.domain",
+    "identity.logo_status",
+    "market.industry",
+    "market.business_model",
+    "market.monetization_model",
+    "geography.excluded_regions",
+    "geography.physical_locations",
+    "geography.local_pages",
+    "geography.map_embed",
+    "content.sitemap_strategy",
+    "content.content_status",
+    "content.content_tone.voice",
+    "content.content_tone.reading_level",
+    "content.faq_bank",
+    "design.visual_direction",
+    "design.brand_tokens.spacing",
+    "design.layout_rules",
+    "design.accessibility_rules",
+    "integrations",
+    "deployment",
+    "validation.required_field_policy",
+    "validation.unknown_field_policy",
+    "validation.non_blocking_warnings",
+    "assets",
+    "experiments",
+    "future_outputs",
+    "notes",
+  ];
+  if (gatePrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[]`))) return "GATE";
+  if (runtimePrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[]`))) return "RUNTIME";
+  if (provenancePrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[]`))) return "PROVENANCE";
+  return undefined;
+}
+
+function compileSemanticProvenance(ds: any): SemanticProvenance {
+  const runtime: string[] = [];
+  const gates: string[] = [];
+  const provenance: string[] = [];
+  for (const path of leafPaths(ds)) {
+    const disposition = dispositionFor(path);
+    if (!disposition) throw new Error(`UNMAPPED_SOURCE_FIELD: ${path}`);
+    if (disposition === "RUNTIME") runtime.push(path);
+    if (disposition === "GATE") gates.push(path);
+    if (disposition === "PROVENANCE") provenance.push(path);
+  }
+  return {
+    source_spec_version: String(ds.metadata?.version ?? "1.0.0"),
     compiler_version: "1.1.0",
-    runtime_authority_paths: [
-      "identity.brand_positioning",
-      "market.competitive_angle",
-      "audience",
-      "offer",
-      "authority",
-      "geography",
-      "conversion",
-      "content.required_pages",
-      "seo",
-      "client_vision",
-      "design_references",
-      "design.brand_tokens",
-      "assets",
-    ],
-    gate_paths: ["wom_flags", "compliance", "design.design_status"],
-    provenance_paths: ["metadata", "content.page_templates"],
+    runtime_authority_paths: [...new Set(runtime)].sort(),
+    gate_paths: [...new Set(gates)].sort(),
+    provenance_paths: [...new Set(provenance)].sort(),
   };
 }
 
@@ -213,6 +353,12 @@ export function buildFlatSpec(nested: unknown): DomainSpec {
 
   const businessFacts = deriveBusinessFacts(ds);
   if (businessFacts) flat.business_facts = businessFacts;
+  const valueProposition = compileValueProposition(ds);
+  if (valueProposition) flat.value_proposition = valueProposition;
+  const conversionAuthority = compileConversionAuthority(ds);
+  if (conversionAuthority) flat.conversion_authority = conversionAuthority;
+  const guardrails = compileContentGuardrails(ds);
+  if (guardrails) flat.content_guardrails = guardrails;
   flat.semantic_provenance = compileSemanticProvenance(ds);
 
   carryStructuredAssets(ds, flat);
@@ -285,7 +431,7 @@ function routeFromRequiredPage(
   return route;
 }
 
-function buildSeoContract(ds: any, leadFormAction: unknown, contact: any): Record<string, unknown> {
+function buildSeoContract(ds: any, leadFormAction: unknown, contact: any): any {
   const clusters = [ds.seo.primary_keyword_cluster, ...(ds.seo.secondary_keyword_clusters ?? [])];
   const targetKeywords = clusters.flatMap((c: any) => c.keywords as string[]);
   const seoContract: Record<string, unknown> = {
