@@ -1,4 +1,4 @@
-// L9_META: layer=stage, role=competitive_intelligence, stage_index=3, status=active, version=1.0.0
+// L9_META: layer=stage, role=competitive_intelligence, stage_index=3, status=active, version=1.1.0
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { type CompetitiveLandscapeArtifact } from "@quantum-l9/bot-interop";
@@ -29,6 +29,7 @@ import {
   SeoBotPreflightError,
   type SeoBuildIntelligencePort,
 } from "../intelligence/SeoBuildIntelligencePort.js";
+import { textField } from "../lib/coerce-text.js";
 import { type BuildContext, clientAssetRoot } from "../pipeline/BuildContext.js";
 import { BuildError } from "../pipeline/BuildError.js";
 import {
@@ -37,7 +38,6 @@ import {
 } from "../pipeline/evidence/RedesignIntelligenceArtifacts.js";
 import type { Stage } from "../pipeline/PipelineRunner.js";
 import { extractJson } from "../services/extractJson.js";
-import { textField } from "../lib/coerce-text.js";
 
 const logger = createModuleLogger("stage:competitive-intelligence");
 
@@ -55,17 +55,10 @@ const STATE_NAME: Record<string, string> = {
   VA: "Virginia,United States",
 };
 
-/** DataForSEO accepts canonical names, not state codes ("NC" yields task errors). */
 function canonicalLocationName(primaryState: string): string {
   return STATE_NAME[primaryState.trim().toUpperCase()] ?? "United States";
 }
 
-/**
- * The observed source-site palette enters the blueprint as abstract
- * characteristics and nothing else (WBV2-007). Concrete values stay in the
- * source-site manifest, where they remain correct evidence and correct COPY
- * input, and are simply not design authority for a redesign.
- */
 function observedPaletteCharacteristics(ctx: BuildContext): string[] {
   return abstractPaletteCharacteristics(ctx.sourceSiteManifest?.palette);
 }
@@ -86,10 +79,6 @@ function parsePatterns(value: unknown, source: string): HarvestedPattern[] {
         "INTELLIGENCE_PARSE_FAILED",
         `${source}: pattern ${index} is not an object`,
       );
-    // The model may emit a multi-part disposition ("PORT,MERGE_WITH_EXISTING").
-    // Split on commas/semicolons, validate each part against the allowed set,
-    // and keep the sorted unique joined form. Only string dispositions are
-    // meaningful — any other shape falls through to the no-disposition error.
     const rawDisposition =
       typeof entry.disposition === "string" ? entry.disposition : "";
     const dispositionParts = [...new Set(
@@ -126,10 +115,6 @@ function parsePatterns(value: unknown, source: string): HarvestedPattern[] {
   });
 }
 
-/**
- * Single bounded repair for JSON-shaped improve ops: parse, and on failure retry
- * once with the rejection reason. A second failure is terminal.
- */
 async function strategizeJson(
   ctx: BuildContext,
   operation: "DONOR_NUGGET_EXTRACTION" | "PATTERN_SYNTHESIS" | "WEBSITE_BLUEPRINT",
@@ -152,7 +137,6 @@ async function strategizeJson(
   }
 }
 
-/** Campaign 7 R4: hard production invariant — exactly ten qualified donors. */
 export const REQUIRED_DONOR_COUNT = 10;
 
 interface DonorCandidate {
@@ -160,12 +144,6 @@ interface DonorCandidate {
   observation_ids: string[];
 }
 
-/**
- * Ordered qualified donor candidate pool: selected_donors first, then the
- * remaining ranked domains (by aggregate visibility) for bounded replacement.
- * Excluded classes (directories, social, publishers, aggregators,
- * marketplaces, …) never occupy candidate positions.
- */
 export function qualifiedDonorCandidates(
   landscape: CompetitiveLandscapeArtifact,
 ): DonorCandidate[] {
@@ -188,7 +166,6 @@ export function qualifiedDonorCandidates(
   return pool;
 }
 
-/** Ranked page URLs for a donor from the landscape's SERP observations. */
 export function donorCandidateUrls(
   landscape: CompetitiveLandscapeArtifact,
   candidate: DonorCandidate,
@@ -206,8 +183,6 @@ export function donorCandidateUrls(
     .sort((a, b) => a.rank - b.rank)
     .map((observation) => observation.url);
   const urls = [...new Set([...fromRefs, ...fromDomain])];
-  // Bounded discovery of the highest-value page even when the SERP only
-  // observed deep URLs: the site root is a legitimate high-value page.
   try {
     const first = urls[0] ? new URL(urls[0]) : new URL(`https://${candidate.domain}`);
     const root = `${first.protocol}//${first.host}/`;
@@ -218,12 +193,6 @@ export function donorCandidateUrls(
   return urls;
 }
 
-/**
- * Bounded acquisition (Campaign 7 R4+R5): walk the qualified pool, acquire
- * real crawl + screenshot evidence per donor, replace unusable candidates,
- * and fail closed unless exactly REQUIRED_DONOR_COUNT donors satisfy BOTH the
- * qualification policy and the minimum evidence policy.
- */
 export async function acquireAcceptedDonors(
   landscape: CompetitiveLandscapeArtifact,
   ingestor: DonorIngestor,
@@ -241,7 +210,7 @@ export async function acquireAcceptedDonors(
       output_dir: outputDir,
       max_pages: maxPagesPerDonor,
     });
-    if (!evidence) continue; // unusable — bounded replacement continues
+    if (!evidence) continue;
     if (evidence.pages.length === 0) {
       throw new BuildError(
         "DONOR_EVIDENCE_INCOMPLETE",
@@ -268,7 +237,7 @@ export async function acquireAcceptedDonors(
 
 export class CompetitiveIntelligenceStage implements Stage {
   name = "competitive-intelligence";
-  version = "1.0.0";
+  version = "1.1.0";
   evidence = {
     inputs: (_ctx: BuildContext) => [],
     outputs: (_ctx: BuildContext) => [],
@@ -289,9 +258,6 @@ export class CompetitiveIntelligenceStage implements Stage {
       );
       return;
     }
-    // Topology guard: the seo-build-intelligence-preflight stage must already
-    // have proved readiness. Without that evidence this stage would make the
-    // first PAID SEO-Bot call on an unproven service, so it fails closed.
     if (!ctx.seoBuildIntelligencePreflight) {
       throw new BuildError(
         "REDESIGN_PIPELINE_INCOMPLETE",
@@ -307,9 +273,6 @@ export class CompetitiveIntelligenceStage implements Stage {
       );
     }
 
-    // Resume: a persisted, integrity-verified landscape + donor evidence +
-    // sealed blueprint for THIS build is reused instead of re-spending against
-    // SEO-Bot, the crawler, and the model.
     if (ctx.resume && !ctx.dryRun) {
       const hydrated = hydrateRedesignIntelligence(ctx, [
         "competitive-landscape",
@@ -331,12 +294,6 @@ export class CompetitiveIntelligenceStage implements Stage {
     }
 
     const port = this.portFactory(ctx);
-
-    // Preflight BEFORE the first SEO-Bot build-intelligence call (oracle
-    // ORACLE-005: seo-build-intelligence-preflight must precede
-    // seo:createCompetitiveLandscape). Ordering proof is server-side:
-    // SEO-Bot stamps the preflight report (produced_at) and the sealed
-    // landscape artifact (produced_at) — the receipt compares the two.
     let preflightSnapshot: Awaited<ReturnType<SeoBuildIntelligencePort["preflight"]>>;
     try {
       preflightSnapshot = await port.preflight();
@@ -379,11 +336,8 @@ export class CompetitiveIntelligenceStage implements Stage {
       market: {
         niche: ctx.domainSpec.vertical,
         country: "US",
-        // DataForSEO expects canonical language names ('English'), not ISO codes ('en').
         language: "English",
         device: "desktop" as const,
-        // DataForSEO requires canonical location names ("North Carolina,United
-        // States"); bare state codes (NC) return task errors, not results.
         location_name: canonicalLocationName(ctx.domainSpec.geography.primary_state),
       },
       seed_queries: seedQueries,
@@ -393,7 +347,6 @@ export class CompetitiveIntelligenceStage implements Stage {
     if (ctx.seoBotOrdering) {
       ctx.seoBotOrdering.landscape_produced_at = landscape.produced_at;
     }
-    // Persist the paid, sealed artifact the moment it is accepted (GAP-3).
     persistRedesignArtifact(ctx, "competitive-landscape", landscape);
     persistRedesignArtifact(ctx, "seo-bot-ordering", ctx.seoBotOrdering);
     logger.info(
@@ -405,9 +358,6 @@ export class CompetitiveIntelligenceStage implements Stage {
       "Competitive landscape sealed; beginning bounded donor acquisition",
     );
 
-    // Campaign 7 R4+R5: exactly ten qualified donors, each with real crawl
-    // and screenshot evidence. Unusable candidates are replaced from the
-    // qualified pool; a shortfall fails closed.
     const ingestor = this.ingestorFactory(ctx);
     let accepted: AcceptedDonorEvidence[];
     try {
@@ -430,8 +380,6 @@ export class CompetitiveIntelligenceStage implements Stage {
       "Donor evidence acquisition complete (10/10)",
     );
 
-    // Per-donor nugget extraction (abstracts only — competitor prose/images
-    // never enter generation inputs; donor assets stay DONOR_REFERENCE_ONLY).
     const nuggets: Array<
       Omit<HarvestedPattern, "pattern_id" | "donor_frequency"> & { donor: string }
     > = [];
@@ -457,7 +405,6 @@ export class CompetitiveIntelligenceStage implements Stage {
       }
     }
 
-    // Cross-donor synthesis into the pattern portfolio.
     const synthesis = await strategizeJson(
       ctx,
       "PATTERN_SYNTHESIS",
@@ -471,20 +418,9 @@ export class CompetitiveIntelligenceStage implements Stage {
     if (portfolio.patterns.length === 0)
       throw new BuildError("INTELLIGENCE_PARSE_FAILED", "pattern synthesis produced no patterns");
 
-    // First-party design authorities (ADR-0018). The design-reference-
-    // acquisition stage resolves them from the frozen spec AND acquires /
-    // analyzes every client reference URL; this stage consumes that result so
-    // explicit client intent and observed reference evidence are both in hand
-    // before the model is asked anything (WBV2-019). Resolving from the spec
-    // here is only legitimate when nothing needed acquiring — a spec that
-    // declares reference URLs without acquisition evidence fails closed
-    // rather than silently building on operator-authored principles alone.
     const { clientVision, designReferenceSet, designReferenceIntelligence } =
       resolveDesignAuthorities(ctx);
 
-    // WBV2-007: observed palettes contribute abstract characteristics only. A
-    // color becomes authoritative through explicit client intent or an explicit
-    // first-party design requirement — never because a crawler saw it.
     const paletteAuthority = resolvePaletteAuthority({
       spec: ctx.domainSpec,
       clientVision,
@@ -499,21 +435,22 @@ export class CompetitiveIntelligenceStage implements Stage {
       "First-party design authorities resolved",
     );
 
-    // The model contributes sections, strategy, guardrails and generic
-    // principles. Route identity stays spec-owned (WBV2-021) and the model sits
-    // at the bottom of the design priority ladder.
     const specRoutes = ctx.domainSpec.routes.map((route) => ({
       route_id: route.slug,
       path: route.slug,
-      purpose: route.title,
+      purpose: route.purpose ?? route.title,
       spec_components: route.components,
     }));
     const model = await strategizeJson(
       ctx,
       "WEBSITE_BLUEPRINT",
       "[intelligence] website build blueprint",
-      "You produce a website build blueprint: strategy, guardrails, conversion, generic design principles, and per-route sections referencing pattern portfolio ids. No layout/design/prose generation — abstractions only. Never propose concrete colors; palette authority is not yours.",
-      `Pattern portfolio: ${JSON.stringify(portfolio)}\nClient design intent (authoritative — never contradict): ${JSON.stringify(
+      "You produce a website build blueprint: strategy, guardrails, conversion, generic design principles, and per-route sections referencing pattern portfolio ids. No layout/design/prose generation — abstractions only. Never propose concrete colors; palette authority is not yours. First-party commercial authority is immutable; you may add compatible ideas but never contradict or replace it.",
+      `Pattern portfolio: ${JSON.stringify(portfolio)}\nFirst-party commercial authority (authoritative — never contradict): ${JSON.stringify({
+        value_proposition: ctx.domainSpec.value_proposition,
+        conversion_authority: ctx.domainSpec.conversion_authority,
+        content_guardrails: ctx.domainSpec.content_guardrails,
+      })}\nClient design intent (authoritative — never contradict): ${JSON.stringify(
         {
           brand_attributes: clientVision.brand_attributes,
           visual_preferences: clientVision.visual_preferences,
@@ -526,10 +463,9 @@ export class CompetitiveIntelligenceStage implements Stage {
         hierarchy: designReferenceIntelligence.hierarchy_principles,
         positive: designReferenceIntelligence.positive_patterns,
         negative: designReferenceIntelligence.negative_patterns,
-      })}\nRoutes (identity is fixed — you may only choose sections, objectives, content slots, pattern refs, and proof requirements): ${JSON.stringify(specRoutes)}\nReturn ONLY JSON: {"strategy":{"experience_attributes":[],"differentiation":[],"preserve":[],"evolve":[],"forbid":[]},"content_guardrails":{"forbidden_claims":[]},"conversion":{"primary_action":"","secondary_actions":[],"persistent_mobile_action":true},"design_principles":[],"routes":[{"route_id","sections":[{"section_id","component_class","objective","content_slots":[],"pattern_refs":[],"proof_requirements":[]}]}],"acceptance_tests":[]}`,
+      })}\nRoutes (identity and purpose are fixed — you may only choose sections, objectives, content slots, pattern refs, and proof requirements): ${JSON.stringify(specRoutes)}\nReturn ONLY JSON: {"strategy":{"experience_attributes":[],"differentiation":[],"preserve":[],"evolve":[],"forbid":[]},"content_guardrails":{"forbidden_claims":[]},"conversion":{"primary_action":"","secondary_actions":[],"persistent_mobile_action":true},"design_principles":[],"routes":[{"route_id","sections":[{"section_id","component_class","objective","content_slots":[],"pattern_refs":[],"proof_requirements":[]}]}],"acceptance_tests":[]}`,
     );
 
-    // Compilation, sealing and the full blueprint gate belong to the compiler.
     const blueprint = compileWebsiteBuildBlueprint({
       clientId: ctx.clientId,
       buildId: ctx.buildId,
@@ -541,16 +477,14 @@ export class CompetitiveIntelligenceStage implements Stage {
       clientVision,
       designReferenceIntelligence,
       paletteAuthority,
+      valueProposition: ctx.domainSpec.value_proposition,
+      conversionAuthority: ctx.domainSpec.conversion_authority,
+      contentGuardrails: ctx.domainSpec.content_guardrails,
       model,
     });
 
     ctx.websiteBlueprint = blueprint;
     persistRedesignArtifact(ctx, "website-build-blueprint", blueprint);
-    // Persist the sealed artifact: the golden receipt adapter projects evidence
-    // from disk, and the runtime previously kept the blueprint in product
-    // memory only (golden run #61: WEBSITE_BLUEPRINT_INVALID — artifact_ref
-    // evidence missing). Written under the client asset root, the same root the
-    // adapter's candidate paths scan.
     if (!ctx.dryRun) {
       const assetsDir = clientAssetRoot(ctx);
       mkdirSync(assetsDir, { recursive: true });
@@ -572,11 +506,6 @@ export class CompetitiveIntelligenceStage implements Stage {
   }
 }
 
-/**
- * Resolve the design authorities this stage compiles from. Prefers the
- * acquisition stage's resolved results; falls back to the spec only when no
- * client reference required acquisition (no URL-bearing accepted reference).
- */
 export function resolveDesignAuthorities(ctx: BuildContext): {
   clientVision: NonNullable<BuildContext["clientVision"]>;
   designReferenceSet: NonNullable<BuildContext["designReferenceSet"]>;
