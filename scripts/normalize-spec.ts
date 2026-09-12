@@ -51,6 +51,15 @@ function hasPlaceholderDeep(v: unknown): boolean {
   return false;
 }
 
+/**
+ * Explicit collation for every sorted string list the compiler emits. A bare
+ * Array.prototype.sort() orders by UTF-16 code unit, which is why the IR must
+ * never rely on it: the normalized spec is compared byte-for-byte by
+ * normalize-spec:check, so the ordering has to be stated rather than inherited
+ * from the default (typescript:S2871).
+ */
+const byLocale = (a: string, b: string): number => a.localeCompare(b);
+
 const VALUE_PROPOSITION_STATUSES: readonly ValuePropositionContract["status"][] = [
   "locked",
   "draft",
@@ -177,7 +186,7 @@ function compileConversionAuthority(ds: any): ConversionAuthority | undefined {
 
 function compileContentGuardrails(ds: any): ContentGuardrails | undefined {
   const forbidden = [...strings(ds.content?.content_tone?.banned_claims), ...strings(ds.compliance?.prohibited_claims)];
-  const unique = [...new Set(forbidden)].sort((a, b) => a.localeCompare(b));
+  const unique = [...new Set(forbidden)].sort(byLocale);
   return unique.length > 0 ? { forbidden_claims: unique } : undefined;
 }
 
@@ -244,9 +253,9 @@ function compileSemanticProvenance(ds: any): SemanticProvenance {
   return {
     source_spec_version: String(ds.metadata?.version ?? "1.0.0"),
     compiler_version: "1.1.0",
-    runtime_authority_paths: [...buckets.RUNTIME].sort(),
-    gate_paths: [...buckets.GATE].sort(),
-    provenance_paths: [...buckets.PROVENANCE].sort(),
+    runtime_authority_paths: [...buckets.RUNTIME].sort(byLocale),
+    gate_paths: [...buckets.GATE].sort(byLocale),
+    provenance_paths: [...buckets.PROVENANCE].sort(byLocale),
   };
 }
 
@@ -376,31 +385,75 @@ function carryStructuredAssets(ds: any, flat: DomainSpec): void {
   }
 }
 
+/**
+ * Every committed source -> normalized IR pair. The check gate used to cover
+ * only the first, so the second silently rotted the moment the v1.1 compiler
+ * began emitting route semantics: an artifact nothing verifies is an artifact
+ * that drifts. Both are now checked and regenerated together.
+ */
+const COMMITTED_SPECS: ReadonlyArray<{ in: string; out: string }> = [
+  {
+    in: "examples/supplemental-insurance-pros/domain_spec.source.yaml",
+    out: "examples/supplemental-insurance-pros/domain_spec.normalized.yaml",
+  },
+  {
+    in: "examples/quantum-ai-partners/domain_spec.source.yaml",
+    out: "examples/quantum-ai-partners/domain_spec.normalized.yaml",
+  },
+];
+
+function compileSpec(inPath: string): DomainSpec {
+  const flat = buildFlatSpec(parse(readFileSync(inPath, "utf-8")));
+  validateDomainSpec(flat, `${inPath} (normalized)`);
+  return flat;
+}
+
+function checkSpec(inPath: string, outPath: string): boolean {
+  const flat = compileSpec(inPath);
+  const committed = parse(readFileSync(outPath, "utf-8"));
+  if (deepEqual(flat, committed)) {
+    console.log(`normalize-spec --check OK: ${outPath} matches normalize(${inPath}).`);
+    return true;
+  }
+  console.error(`normalize-spec --check FAILED: ${outPath} is stale.\nRegenerate with: tsx scripts/normalize-spec.ts`);
+  for (const key of Object.keys(flat)) {
+    if (!deepEqual((flat as any)[key], (committed as any)?.[key])) {
+      console.error(`  first diff at key: ${key}`);
+      break;
+    }
+  }
+  return false;
+}
+
+function writeSpec(inPath: string, outPath: string): void {
+  const flat = compileSpec(inPath);
+  mkdirSync(dirname(outPath), { recursive: true });
+  // lineWidth: 0 disables line folding. Without it the byte output depends on
+  // the yaml package's default width, so regenerating an unchanged spec
+  // produced a pure re-wrapping diff whenever that default moved. The gate
+  // compares parsed objects and stays green through such churn, which is
+  // precisely why it has to be pinned here rather than noticed later.
+  writeFileSync(outPath, stringify(flat, { lineWidth: 0 }), "utf-8");
+  console.log(`Wrote ${outPath} from ${inPath}.`);
+}
+
 function main() {
   const args = process.argv.slice(2);
   const check = args.includes("--check");
-  const inPath = getArg(args, "--in") ?? "examples/supplemental-insurance-pros/domain_spec.source.yaml";
-  const outPath = getArg(args, "--out") ?? "examples/supplemental-insurance-pros/domain_spec.normalized.yaml";
-  const flat = buildFlatSpec(parse(readFileSync(inPath, "utf-8")));
-  validateDomainSpec(flat, `${inPath} (normalized)`);
+  const inArg = getArg(args, "--in");
+  const outArg = getArg(args, "--out");
+  // An explicit --in/--out still addresses exactly one pair; the default set is
+  // every committed spec so neither can drift unobserved again.
+  const targets =
+    inArg !== undefined || outArg !== undefined
+      ? [{ in: inArg ?? COMMITTED_SPECS[0].in, out: outArg ?? COMMITTED_SPECS[0].out }]
+      : COMMITTED_SPECS;
   if (check) {
-    const committed = parse(readFileSync(outPath, "utf-8"));
-    if (!deepEqual(flat, committed)) {
-      console.error(`normalize-spec --check FAILED: ${outPath} is stale.\nRegenerate with: tsx scripts/normalize-spec.ts`);
-      for (const key of Object.keys(flat)) {
-        if (!deepEqual((flat as any)[key], (committed as any)?.[key])) {
-          console.error(`  first diff at key: ${key}`);
-          break;
-        }
-      }
-      process.exit(1);
-    }
-    console.log(`normalize-spec --check OK: ${outPath} matches normalize(${inPath}).`);
+    const stale = targets.filter((target) => !checkSpec(target.in, target.out));
+    if (stale.length > 0) process.exit(1);
     return;
   }
-  mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, stringify(flat), "utf-8");
-  console.log(`Wrote ${outPath} from ${inPath}.`);
+  for (const target of targets) writeSpec(target.in, target.out);
 }
 
 /**

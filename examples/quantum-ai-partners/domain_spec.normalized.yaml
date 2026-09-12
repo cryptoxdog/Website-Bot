@@ -27,6 +27,9 @@ routes:
       - process
       - faq
       - final_cta
+    purpose: Position the company, route the three audience segments, show the layered services model, and capture email conversions.
+    template: homepage
+    priority: 1
   - slug: /services
     title: Services
     components:
@@ -36,6 +39,9 @@ routes:
       - process
       - faq
       - cta
+    purpose: Explain the three service lines and how they compose into one layered engagement.
+    template: services_page
+    priority: 2
   - slug: /approach
     title: Approach
     components:
@@ -45,6 +51,9 @@ routes:
       - stack
       - faq
       - cta
+    purpose: Explain the layered systems methodology — strategy, build, production hardening — with real depth, no hype.
+    template: approach_page
+    priority: 3
   - slug: /about
     title: About
     components:
@@ -52,18 +61,27 @@ routes:
       - positioning
       - trust_bar
       - cta
+    purpose: State who Quantum AI Partners is and what it stands for, without unverified credentials.
+    template: about_page
+    priority: 4
   - slug: /faq
     title: FAQ
     components:
       - hero
       - faq
       - cta
+    purpose: Answer cost, process, technology, security, and engagement questions.
+    template: faq_page
+    priority: 5
   - slug: /contact
     title: Contact
     components:
       - hero
       - contact_options
       - cta
+    purpose: Primary conversion page — email and intro-call path.
+    template: contact_page
+    priority: 6
 seo_contract:
   site_url: https://www.quantumaipartners.com
   target_keywords:
@@ -83,10 +101,46 @@ seo_contract:
     - AI consulting engagement model
     - Quantum AI Partners
     - AI consultancy Quantum AI Partners
+  route_targets:
+    - cluster_name: ai_consulting
+      target_page: /services
+      intent: service_provider
+      keywords:
+        - AI consulting
+        - AI consulting services
+        - AI consulting firm
+        - enterprise AI consulting
+    - cluster_name: ai_implementation
+      target_page: /approach
+      intent: service_provider
+      keywords:
+        - AI implementation
+        - LLM integration
+        - custom AI development
+        - AI agent development
+    - cluster_name: ai_strategy
+      target_page: /services
+      intent: service_provider
+      keywords:
+        - AI strategy
+        - AI adoption roadmap
+        - AI readiness assessment
+    - cluster_name: ai_faq
+      target_page: /faq
+      intent: informational
+      keywords:
+        - AI consulting FAQ
+        - how much does AI consulting cost
+        - AI consulting engagement model
+    - cluster_name: brand
+      target_page: /about
+      intent: informational
+      keywords:
+        - Quantum AI Partners
+        - AI consultancy Quantum AI Partners
   metadata_rules:
     title_pattern: "{Primary Keyword} | Quantum AI Partners"
-    description_pattern: Engineering-grade {Topic} for {Audience} — AI strategy,
-      custom systems, and production hardening without the hype.
+    description_pattern: Engineering-grade {Topic} for {Audience} — AI strategy, custom systems, and production hardening without the hype.
   schema_rules:
     - Organization
     - ProfessionalService
@@ -108,6 +162,102 @@ seo_contract:
       - thin_city_pages_before_national_strategy_is_approved
       - guaranteed_outcome_claim_pages
 wom_flags: []
+business_facts:
+  legal_name: Quantum AI Partners
+  tagline: Engineering-grade AI systems for business.
+  brand_positioning: An AI consultancy and delivery partner for strategy, custom AI/LLM systems, and production hardening — engineering-first, without hype.
+  primary_value: Take organizations from AI intent to working, evaluated, production-grade systems through a layered systems discipline.
+  competitive_angle: Layered-systems AI engineering — strategy, build, and production hardening as one continuous discipline, expressed without hype.
+  core_offer: AI strategy, custom AI and LLM systems, and production hardening.
+  offer_type: service
+  pricing_visibility: engagement_based
+  deliverables:
+    - strategy_roadmap
+    - working_prototype
+    - production_system
+    - evaluation_suite
+    - knowledge_transfer
+  decision_makers:
+    - cto
+    - vp_engineering
+    - head_of_product
+    - founder
+  pain_points:
+    - llm_adoption_uncertainty
+    - integration_risk
+    - talent_gap
+    - evaluation_gaps
+    - cost_uncertainty
+    - ai_hype_fatigue
+    - data_privacy_concerns
+  trust_requirements:
+    - engineering_depth
+    - honest_scoping
+    - security_first
+    - no_hype_language
+    - clear_pricing_signals
+  service_area_model: remote_first
+  service_lines:
+    - AI Strategy & Roadmaps
+    - Custom AI & LLM Systems
+    - AI Modernization & MLOps
+conversion_authority:
+  primary_action: Book an Intro Call
+  secondary_actions:
+    - Email Us
+    - Explore Services
+  cta_library:
+    - Book an Intro Call
+    - Email Us
+    - Explore Services
+    - See the Approach
+content_guardrails:
+  forbidden_claims:
+    - agi_claims
+    - fake_benchmarks
+    - guaranteed_roi
+    - hallucination_free_guarantees
+    - invented_case_studies
+    - invented_client_names
+    - performance_guarantees
+    - trusted_by_claims
+semantic_provenance:
+  source_spec_version: 1.0.0
+  compiler_version: 1.1.0
+  runtime_authority_paths:
+    - assets
+    - audience
+    - authority
+    - build_intent
+    - client_vision
+    - content
+    - conversion
+    - design
+    - design_references
+    - geography
+    - identity
+    - market
+    - offer
+    - seo
+  gate_paths:
+    - authority
+    - compliance
+    - design
+    - validation
+  provenance_paths:
+    - authority
+    - content
+    - deployment
+    - design
+    - experiments
+    - future_outputs
+    - geography
+    - identity
+    - integrations
+    - market
+    - metadata
+    - notes
+    - validation
 assets:
   generation:
     enabled: true
@@ -117,12 +267,9 @@ assets:
 build_intent: REDESIGN_IMPROVE
 client_vision:
   desired_outcomes:
-    - Position Quantum AI Partners as a distinctive, engineering-deep AI partner
-      — never a generic AI consultancy template.
-    - Convert visitors into intro-call and email inquiries through a clear,
-      low-friction path.
-    - Communicate layered-systems depth (strategy to build to production)
-      without hype.
+    - Position Quantum AI Partners as a distinctive, engineering-deep AI partner — never a generic AI consultancy template.
+    - Convert visitors into intro-call and email inquiries through a clear, low-friction path.
+    - Communicate layered-systems depth (strategy to build to production) without hype.
   brand_attributes:
     - distinctive
     - graphically_rich
@@ -200,8 +347,7 @@ design_references:
       negative: []
   - reference_id: baseten
     url: https://www.baseten.co/
-    selection_reason: "Client likes: cool graphics; shows layers; layers apply to L9
-      and Quantum AI Partners."
+    selection_reason: "Client likes: cool graphics; shows layers; layers apply to L9 and Quantum AI Partners."
     evidence_refs:
       - likes_dislikes_table_2026-09-01
     principles:
