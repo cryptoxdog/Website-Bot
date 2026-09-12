@@ -1,4 +1,4 @@
-// L9_META: layer=pipeline, role=context_carrier, status=active, version=3.1.0
+// L9_META: layer=pipeline, role=context_carrier, status=active, version=3.0.0
 import { resolve } from "node:path";
 import type {
   CompetitiveLandscapeArtifact,
@@ -47,24 +47,6 @@ export interface SeoContract {
   phone?: string;
   lead_form_action?: string;
   target_keywords?: string[];
-  route_targets?: Array<{
-    cluster_name: string;
-    target_page: string;
-    intent: string;
-    keywords: string[];
-  }>;
-  metadata_rules?: Record<string, unknown>;
-  schema_rules?: string[];
-  schema_application?: string;
-  internal_linking_rules?: Record<string, unknown>;
-}
-
-export interface SemanticProvenance {
-  source_spec_version: string;
-  compiler_version: string;
-  runtime_authority_paths: string[];
-  gate_paths: string[];
-  provenance_paths: string[];
 }
 
 /** Source website to crawl for reusable assets. Off unless explicitly enabled. */
@@ -131,20 +113,13 @@ export interface DomainSpec {
     palette?: Record<string, string>;
     fonts?: Record<string, string>;
   };
-  routes: Array<{
-    slug: string;
-    title: string;
-    components: string[];
-    purpose?: string;
-    template?: string;
-    priority?: number;
-    noindex?: boolean;
-  }>;
+  routes: Array<{ slug: string; title: string; components: string[]; noindex?: boolean }>;
   seo_contract?: SeoContract;
-  /** Operator-verified or compiler-derived first-party business facts. */
+  /** Operator-verified business facts (frozen case authority). Each key
+   * becomes a VerifiedBusinessFact; values may be string | boolean | number
+   * | string[]. Literal phrases here are what claim grounding validates
+   * against (e.g. hours: "24/7", free_inspection: true). */
   business_facts?: Record<string, string | boolean | number | string[]>;
-  /** Explicit trace of which rich-source semantic families became runtime authority, gates, or provenance. */
-  semantic_provenance?: SemanticProvenance;
   wom_flags?: Array<{ key: string; value: string; severity: "error" | "warning" | "info" }>;
   deploy?: {
     github_repo: string;
@@ -160,7 +135,18 @@ export interface DomainSpec {
   assets?: AssetSpec;
   /** Transformation intent. Legacy specs default to COPY; REDESIGN_IMPROVE must be explicit. */
   build_intent?: "COPY" | "REDESIGN_IMPROVE";
+  /**
+   * Explicit client design intent (ADR-0018, WBV2-003). Resolved into
+   * `ClientVision`, which outranks any inferred source/donor/reference
+   * observation. Omit the block entirely when the client stated nothing —
+   * a declared but empty vision is rejected rather than silently ignored.
+   */
   client_vision?: ClientVisionSpec;
+  /**
+   * Design references the operator accepted or rejected on the client's
+   * behalf (WBV2-004). Accepted references contribute abstracted principles
+   * only; raw copy, markup, CSS and imagery never transfer.
+   */
   design_references?: DesignReferenceSpec[];
 }
 
@@ -175,6 +161,7 @@ export interface ClientVisionSpec {
   change?: string[];
   conversion_priorities?: string[];
   explicit_constraints?: string[];
+  /** Explicit client color intent — the only client-side palette authority. */
   palette?: Record<string, string>;
 }
 
@@ -182,6 +169,7 @@ export interface ClientVisionSpec {
 export interface DesignReferenceSpec {
   reference_id: string;
   url?: string;
+  /** Defaults to accepted; set false with a rejection_reason to record a rejection. */
   accepted?: boolean;
   selection_reason?: string;
   rejection_reason?: string;
@@ -220,8 +208,11 @@ export interface SiteConfig {
   designTokens: Record<string, string>;
   leadFormAction?: string;
   phone?: string;
+  /** Resolved images keyed by placement (e.g. "global:logo", "/:hero"). */
   images?: Record<string, SiteImageEntry>;
+  /** Extra source-site photos (gallery/work) not assigned to a slot. */
   galleryImages?: SiteImageEntry[];
+  /** Every published route (href + title) for footer sitemap / section grids. */
   routes: Array<{ href: string; title: string }>;
 }
 
@@ -232,47 +223,110 @@ export interface QualityEvidence {
   visualPostBuild: EvidenceGateStatus;
   buildProof: EvidenceGateStatus;
   release: EvidenceGateStatus;
+  visualQa: EvidenceGateStatus;
 }
 
 export interface BuildContext {
-  runId: string;
-  executionMode: ExecutionMode;
-  repoRoot: string;
-  outputRoot: string;
-  clientNamespace: string;
-  specPath: string;
-  domainSpec?: DomainSpec;
-  buildIntent?: BuildIntent;
+  buildId: string;
+  clientId: string;
+  domainSpec: DomainSpec;
+  dryRun: boolean;
+  mode: ExecutionMode;
+  autoRegisterSeoBot: boolean;
+  llm: WebsiteFactoryLLM;
+  outputDir: string;
+  designTokens?: Record<string, string>;
+  siteConfig?: SiteConfig;
+  /** In-memory evidence fields are caches only. EvidenceStore is authoritative. */
+  assemblyManifest?: AssemblyManifest;
+  buildProof?: BuildProof;
+  publicationEvidence?: PublicationEvidence;
+  deploymentEvidence?: DeploymentEvidence;
+  releaseReceipt?: ReleaseReceipt;
+  releaseReceiptPath?: string;
+  provisioningReceipt?: ProvisioningReceipt;
+  evidenceStore: EvidenceStore;
+  evidenceIndex: EvidenceIndex;
+  resume: boolean;
+  qualityEvidence: QualityEvidence;
+  buildIntent: BuildIntent;
+  websiteBlueprint?: WebsiteBuildBlueprintArtifact;
+  /**
+   * Successful machine-authenticated SEO-Bot readiness proof for this run,
+   * produced by the seo-build-intelligence-preflight stage before the first
+   * paid build-intelligence call. Its absence is a hard failure downstream.
+   */
+  seoBuildIntelligencePreflight?: SeoBotPreflightResult;
+  /** Resolved explicit client design intent (WBV2-003). */
   clientVision?: ClientVision;
+  /** Acquisition + analysis ledger for client-supplied design references. */
+  designReferenceAcquisition?: DesignReferenceAcquisitionManifest;
+  /** Resolved accepted/rejected design reference portfolio (WBV2-004). */
   designReferenceSet?: DesignReferenceSet;
-  designReferenceAcquisitionManifest?: DesignReferenceAcquisitionManifest;
+  /** Abstracted design principles derived from the accepted references. */
   designReferenceIntelligence?: DesignReferenceIntelligence;
-  acceptedDonorEvidence?: AcceptedDonorEvidence[];
   competitiveLandscape?: CompetitiveLandscapeArtifact;
-  websiteBuildBlueprint?: WebsiteBuildBlueprintArtifact;
+  /** Server-side ordering stamps proving preflight preceded the first SEO build-intelligence call. */
+  seoBotOrdering?: {
+    preflight_produced_at: string;
+    landscape_produced_at: string;
+  };
+  acceptedDonors?: AcceptedDonorEvidence[];
   seoContentBlueprint?: SEOContentBlueprintArtifact;
   pageContentContract?: PageContentContractArtifact;
   structuredContentPackage?: StructuredContentPackageArtifact;
-  seoBotPreflight?: SeoBotPreflightResult;
-  siteConfig?: SiteConfig;
+  redesignCounters?: {
+    pageContentContractLlmCalls: number;
+    legacyContentGenerationCalls: number;
+    redesignSchemaLlmCalls: number;
+  };
+  pccDeterminism?: {
+    digestRun1: string;
+    digestRun2: string;
+    sameSemanticInputSameDigest: boolean;
+  };
+  goldenRun?: {
+    casePath: string;
+    oraclePath: string;
+    identityManifestPath: string;
+    runtimeEvidenceOutputPath: string;
+    seoLlmAuditPath?: string;
+  };
+  sourceAssetDecisions?: Array<{
+    assetPath: string;
+    decision: "SELECTED" | "REJECTED";
+    reason: string;
+    slotId?: string;
+  }>;
+  distDir?: string;
   deployTarget?: DeployTarget;
-  provisioningSpec?: ProvisioningSpec;
-  provisioningReceipt?: ProvisioningReceipt;
+  deploymentUrl?: string;
+  sourceCommitSha?: string;
+  generatedContent: Map<string, string>;
+  generatedSchemas: Map<string, object>;
   sourceSiteManifest?: SourceSiteManifest;
   imageAssetPlan?: ImageAssetPlan;
   imageAssetManifest?: ImageAssetManifest;
-  resolvedImageAssets?: ResolvedImageAsset[];
-  evidenceStore?: EvidenceStore;
-  evidenceIndex?: EvidenceIndex;
-  assemblyManifest?: AssemblyManifest;
-  buildProof?: BuildProof;
-  deploymentEvidence?: DeploymentEvidence;
-  publicationEvidence?: PublicationEvidence;
-  releaseReceipt?: ReleaseReceipt;
-  qualityEvidence?: QualityEvidence;
-  llm?: WebsiteFactoryLLM;
+  resolvedImages?: Map<string, ResolvedImageAsset>;
+  imageProvenanceWarnings?: string[];
+  renderedSiteValidationPath?: string;
+  baselineRanks?: Record<string, number | null>;
+  visualQaPassed: boolean;
+  unresolvedErrorFlags?: string[];
+  stageResults: Map<string, { ok: boolean; skipped?: boolean; error?: string }>;
+  startedAt: Date;
 }
 
-export function defaultRepoRoot(): string {
-  return resolve(process.cwd());
+export function makeBuildId(clientId: string): string {
+  return `${clientId}-${Date.now()}`;
+}
+
+/** Per-build on-disk root for staged images/manifests. Scoped by buildId so concurrent builds (and parallel tests) cannot clobber each other. */
+export function clientAssetRoot(ctx: Pick<BuildContext, "clientId" | "buildId">): string {
+  return resolve("build", "assets", ctx.clientId, ctx.buildId);
+}
+
+/** Client-scoped cache that survives new buildIds. */
+export function clientPersistentAssetRoot(ctx: Pick<BuildContext, "clientId">): string {
+  return resolve("build", "assets", ctx.clientId, "_cache");
 }
