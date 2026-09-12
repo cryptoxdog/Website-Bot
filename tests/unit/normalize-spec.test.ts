@@ -6,6 +6,17 @@ import { parse } from "yaml";
 import { buildFlatSpec } from "../../scripts/normalize-spec.js";
 import { validateDomainSpec } from "../../src/pipeline/validateDomainSpec.js";
 
+const VALID_VALUE_PROPOSITION = {
+  status: "locked",
+  target_customer: ["technical buyers"],
+  problem: ["integration risk"],
+  outcome: ["working AI systems"],
+  mechanism: ["engineering delivery"],
+  differentiators: ["systems discipline"],
+  reasons_to_believe: ["engineering depth"],
+  boundaries: ["no guaranteed outcomes"],
+};
+
 function rich(overrides: Record<string, unknown> = {}) {
   return {
     domain_spec: {
@@ -35,16 +46,7 @@ function rich(overrides: Record<string, unknown> = {}) {
         service_lines: [{ name: "AI Strategy" }],
         deliverables: ["roadmap"],
       },
-      value_proposition: {
-        status: "locked",
-        target_customer: ["technical buyers"],
-        problem: ["integration risk"],
-        outcome: ["working AI systems"],
-        mechanism: ["engineering delivery"],
-        differentiators: ["systems discipline"],
-        reasons_to_believe: ["engineering depth"],
-        boundaries: ["no guaranteed outcomes"],
-      },
+      value_proposition: { ...VALID_VALUE_PROPOSITION },
       conversion: {
         primary_conversion: { label: "Book an Intro Call" },
         secondary_conversions: [{ label: "Email Us" }],
@@ -115,6 +117,23 @@ test("v1.1 requires an explicit grounded value proposition", () => {
     () => buildFlatSpec(rich({ value_proposition: undefined })),
     /value_proposition is required/,
   );
+});
+
+test("unknown value_proposition.status is rejected, never coerced to locked", () => {
+  for (const status of ["approved", "LOCKED", "Draft", "", undefined, null, 1]) {
+    assert.throws(
+      () => buildFlatSpec(rich({ value_proposition: { ...VALID_VALUE_PROPOSITION, status } })),
+      /value_proposition\.status must be one of locked\|draft/,
+      `expected rejection for status ${JSON.stringify(status)}`,
+    );
+  }
+});
+
+test("an explicit draft value proposition stays draft", () => {
+  const flat = buildFlatSpec(
+    rich({ value_proposition: { ...VALID_VALUE_PROPOSITION, status: "draft" } }),
+  );
+  assert.equal(flat.value_proposition?.status, "draft");
 });
 
 test("new unclassified source fields fail closed", () => {

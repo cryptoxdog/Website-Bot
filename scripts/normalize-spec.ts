@@ -54,6 +54,11 @@ function hasPlaceholderDeep(v: unknown): boolean {
   return false;
 }
 
+const VALUE_PROPOSITION_STATUSES: readonly ValuePropositionContract["status"][] = [
+  "locked",
+  "draft",
+];
+
 const REQUIRED_PALETTE_KEYS = ["primary", "secondary"] as const;
 const BUILD_INTENTS = ["COPY", "REDESIGN_IMPROVE"] as const;
 
@@ -137,8 +142,13 @@ function compileValueProposition(ds: any): ValuePropositionContract | undefined 
     return undefined;
   }
   const vp = ds.value_proposition;
+  if (!VALUE_PROPOSITION_STATUSES.includes(vp.status)) {
+    throw new Error(
+      `value_proposition.status must be one of ${VALUE_PROPOSITION_STATUSES.join("|")}, got ${JSON.stringify(vp.status)}`,
+    );
+  }
   const compiled: ValuePropositionContract = {
-    status: vp.status === "draft" ? "draft" : "locked",
+    status: vp.status,
     target_customer: strings(vp.target_customer),
     problem: strings(vp.problem),
     outcome: strings(vp.outcome),
