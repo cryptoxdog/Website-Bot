@@ -51,15 +51,6 @@ function hasPlaceholderDeep(v: unknown): boolean {
   return false;
 }
 
-/**
- * Explicit collation for every sorted string list the compiler emits. A bare
- * Array.prototype.sort() orders by UTF-16 code unit, which is why the IR must
- * never rely on it: the normalized spec is compared byte-for-byte by
- * normalize-spec:check, so the ordering has to be stated rather than inherited
- * from the default (typescript:S2871).
- */
-const byLocale = (a: string, b: string): number => a.localeCompare(b);
-
 const VALUE_PROPOSITION_STATUSES: readonly ValuePropositionContract["status"][] = [
   "locked",
   "draft",
@@ -186,7 +177,7 @@ function compileConversionAuthority(ds: any): ConversionAuthority | undefined {
 
 function compileContentGuardrails(ds: any): ContentGuardrails | undefined {
   const forbidden = [...strings(ds.content?.content_tone?.banned_claims), ...strings(ds.compliance?.prohibited_claims)];
-  const unique = [...new Set(forbidden)].sort(byLocale);
+  const unique = [...new Set(forbidden)].sort((a, b) => a.localeCompare(b));
   return unique.length > 0 ? { forbidden_claims: unique } : undefined;
 }
 
@@ -253,9 +244,9 @@ function compileSemanticProvenance(ds: any): SemanticProvenance {
   return {
     source_spec_version: String(ds.metadata?.version ?? "1.0.0"),
     compiler_version: "1.1.0",
-    runtime_authority_paths: [...buckets.RUNTIME].sort(byLocale),
-    gate_paths: [...buckets.GATE].sort(byLocale),
-    provenance_paths: [...buckets.PROVENANCE].sort(byLocale),
+    runtime_authority_paths: [...buckets.RUNTIME].sort((a, b) => a.localeCompare(b)),
+    gate_paths: [...buckets.GATE].sort((a, b) => a.localeCompare(b)),
+    provenance_paths: [...buckets.PROVENANCE].sort((a, b) => a.localeCompare(b)),
   };
 }
 
