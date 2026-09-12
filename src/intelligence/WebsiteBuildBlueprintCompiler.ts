@@ -1,4 +1,4 @@
-// L9_META: layer=intelligence, role=website_build_blueprint_compiler, status=active, version=1.0.0
+// L9_META: layer=intelligence, role=website_build_blueprint_compiler, status=active, version=1.1.0
 //
 // The dedicated owner of WebsiteBuildBlueprintV2 compilation (ADR-0018 §9).
 //
@@ -24,17 +24,14 @@ import {
   type WebsiteBuildBlueprintArtifact,
   type WebsiteBuildBlueprintV2,
 } from "@quantum-l9/bot-interop";
+import { textField } from "../lib/coerce-text.js";
 import {
   type ClientVision,
   type DesignReferenceIntelligence,
   digestDesignAuthority,
   resolveDesignDirection,
 } from "./design-authority.js";
-import { textField } from "../lib/coerce-text.js";
 
-/* ------------------------------------------------------------------ */
-/* Typed failures (WBV2-018)                                          */
-/* ------------------------------------------------------------------ */
 export type BlueprintCompileErrorCode =
   | "BLUEPRINT_GATE_FAILED"
   | "BLUEPRINT_LANDSCAPE_MISMATCH"
@@ -53,9 +50,6 @@ export class BlueprintCompileError extends Error {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Pattern portfolio (Website-Bot-owned, WBV2-008)                    */
-/* ------------------------------------------------------------------ */
 export const ALLOWED_DISPOSITIONS = [
   "PORT",
   "PORT_WITH_HARDENING",
@@ -87,9 +81,6 @@ export function digestOf(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
-/* ------------------------------------------------------------------ */
-/* Canonical slot coverage (WBV2-022 — ported verbatim from V1)       */
-/* ------------------------------------------------------------------ */
 const CONTENT_SLOTS: readonly string[] = [
   "primary_offer",
   "service_overview",
@@ -121,10 +112,6 @@ function uniqueSlots(slots: ContentSlot[]): ContentSlot[] {
   return ordered;
 }
 
-/**
- * Spec-component → canonical slot hints. Used only to place missing slots on
- * the most relevant existing section; leftover slots still land on section 0.
- */
 function slotsForSpecComponent(component: string): ContentSlot[] {
   const name = component.toLowerCase();
   if (name.includes("hero")) return ["primary_offer"];
@@ -150,13 +137,6 @@ function sectionMatchesComponent(section: WebsiteBlueprintSection, component: st
   );
 }
 
-/**
- * Deterministic completeness for PageContentContract compilation: every sealed
- * route must expose the full canonical ContentSlot set. SEO-Bot may require any
- * of those slots; an LLM-sparse section list must not make a valid required
- * requirement unplaceable. CONTENT_REQUIREMENT_UNPLACED still fires if a
- * requirement targets a slot outside this closed set.
- */
 export function ensureCanonicalSlotCoverage(
   sections: WebsiteBlueprintSection[],
   specComponents: string[] = [],
@@ -193,12 +173,6 @@ export function ensureCanonicalSlotCoverage(
     next[0].content_slots = uniqueSlots([...next[0].content_slots, ...missing]);
   }
 
-  // Section-per-component parity: the projection stage maps spec component i
-  // onto generated section i (StructuredContentProjectionStage), so a blueprint
-  // with fewer sections than the spec's components can never project — golden
-  // run #51: /about had 1 LLM-produced blueprint section against 4 frozen spec
-  // components. The spec's component inventory is the section authority; pad
-  // with component-derived sections in spec order.
   while (next.length < specComponents.length) {
     const component = specComponents[next.length]!;
     next.push({
@@ -213,9 +187,6 @@ export function ensureCanonicalSlotCoverage(
   return next;
 }
 
-/* ------------------------------------------------------------------ */
-/* Visual requirements (WBV2-010 — ported verbatim from V1)           */
-/* ------------------------------------------------------------------ */
 function pushHomeRequirement(
   requirements: VisualRequirement[],
   route: WebsiteBlueprintRoute,
@@ -304,7 +275,6 @@ export function deriveVisualRequirements(routes: WebsiteBlueprintRoute[]): Visua
     pushHomeRequirement(requirements, route);
     pushSectionRequirements(requirements, route);
   }
-  // Deterministic identity: one requirement per slot_id, stable order.
   const bySlot = new Map<string, VisualRequirement>();
   for (const requirement of requirements) {
     if (!bySlot.has(requirement.slot_id)) bySlot.set(requirement.slot_id, requirement);
@@ -312,9 +282,6 @@ export function deriveVisualRequirements(routes: WebsiteBlueprintRoute[]): Visua
   return [...bySlot.values()].sort((a, b) => a.slot_id.localeCompare(b.slot_id));
 }
 
-/* ------------------------------------------------------------------ */
-/* Compiler                                                           */
-/* ------------------------------------------------------------------ */
 export interface BlueprintSpecRoute {
   route_id: string;
   path: string;
@@ -322,11 +289,6 @@ export interface BlueprintSpecRoute {
   spec_components: string[];
 }
 
-/**
- * The model's non-authoritative contribution: sections, strategy, guardrails,
- * conversion, and generic principles. It is the LOWEST tier of the WBV2-019
- * ladder and can never introduce a route or overwrite client intent.
- */
 export interface BlueprintModelProposal {
   strategy?: unknown;
   content_guardrails?: unknown;
@@ -340,15 +302,17 @@ export interface CompileWebsiteBuildBlueprintInput {
   clientId: string;
   buildId: string;
   producerVersion: string;
-  /** The frozen spec route set — the sole route identity authority (WBV2-021). */
   specRoutes: BlueprintSpecRoute[];
-  /** Digest input for `provenance.baseline_digest`. */
   baseline: unknown;
   landscape: CompetitiveLandscapeArtifact;
   patternPortfolio: PatternPortfolio;
   clientVision: ClientVision;
   designReferenceIntelligence: DesignReferenceIntelligence;
   paletteAuthority: PaletteAuthority;
+  /** First-party commercial authority compiled from DomainSpec v1.1. */
+  valueProposition?: { differentiators: string[] };
+  conversionAuthority?: { primary_action: string; secondary_actions: string[] };
+  contentGuardrails?: { forbidden_claims: string[] };
   model: BlueprintModelProposal;
   producedAt?: string;
 }
@@ -361,44 +325,62 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function strategyOf(value: unknown): WebsiteBuildBlueprintV2["strategy"] {
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function strategyOf(
+  value: unknown,
+  valueProposition?: CompileWebsiteBuildBlueprintInput["valueProposition"],
+): WebsiteBuildBlueprintV2["strategy"] {
   const row = isRecord(value) ? value : {};
   return {
     experience_attributes: stringArray(row.experience_attributes),
-    differentiation: stringArray(row.differentiation),
+    differentiation: uniqueStrings([
+      ...(valueProposition?.differentiators ?? []),
+      ...stringArray(row.differentiation),
+    ]),
     preserve: stringArray(row.preserve),
     evolve: stringArray(row.evolve),
     forbid: stringArray(row.forbid),
   };
 }
 
-function guardrailsOf(value: unknown): WebsiteBuildBlueprintV2["content_guardrails"] {
+function guardrailsOf(
+  value: unknown,
+  firstParty?: CompileWebsiteBuildBlueprintInput["contentGuardrails"],
+): WebsiteBuildBlueprintV2["content_guardrails"] {
   const row = isRecord(value) ? value : {};
-  return { forbidden_claims: stringArray(row.forbidden_claims) };
+  return {
+    forbidden_claims: uniqueStrings([
+      ...(firstParty?.forbidden_claims ?? []),
+      ...stringArray(row.forbidden_claims),
+    ]),
+  };
 }
 
 function conversionOf(
   value: unknown,
   clientVision: ClientVision,
+  firstParty?: CompileWebsiteBuildBlueprintInput["conversionAuthority"],
 ): WebsiteBuildBlueprintV2["conversion"] {
   const row = isRecord(value) ? value : {};
-  // WBV2-019: an explicit client conversion priority outranks the model's.
   const clientPrimary = clientVision.conversion_priorities[0];
+  const primary =
+    firstParty?.primary_action ??
+    clientPrimary ??
+    (typeof row.primary_action === "string" ? row.primary_action : "Request a free inspection");
   return {
-    primary_action:
-      clientPrimary ??
-      (typeof row.primary_action === "string" ? row.primary_action : "Request a free inspection"),
-    secondary_actions: [
-      ...new Set([
-        ...clientVision.conversion_priorities.slice(1),
-        ...stringArray(row.secondary_actions),
-      ]),
-    ],
+    primary_action: primary,
+    secondary_actions: uniqueStrings([
+      ...(firstParty?.secondary_actions ?? []),
+      ...clientVision.conversion_priorities.slice(firstParty ? 0 : 1),
+      ...stringArray(row.secondary_actions),
+    ]).filter((action) => action !== primary),
     persistent_mobile_action: row.persistent_mobile_action !== false,
   };
 }
 
-/** Re-assert route identity from the spec; the model may only fill sections. */
 function buildRoutes(
   specRoutes: BlueprintSpecRoute[],
   modelRoutes: unknown,
@@ -432,8 +414,6 @@ function buildRoutes(
   });
 }
 
-/* ---- Gate assertions (ported from V1, strengthened) --------------- */
-
 function assertBlueprintIdentity(
   payload: WebsiteBuildBlueprintV2,
   landscape: CompetitiveLandscapeArtifact,
@@ -456,12 +436,6 @@ function assertBlueprintIdentity(
   }
 }
 
-/**
- * WBV2-009 semantic half: each digest must equal the digest of the input it
- * claims to describe. The interop's `assertProvenanceCompleteness` proves the
- * shape; this proves the correspondence, so a well-formed but unrelated digest
- * cannot pass as provenance.
- */
 function assertProvenanceCorrespondence(
   payload: WebsiteBuildBlueprintV2,
   input: CompileWebsiteBuildBlueprintInput,
@@ -534,20 +508,12 @@ export function assertAdoptedPatternTests(portfolio: PatternPortfolio): void {
   }
 }
 
-/**
- * Compile and seal WebsiteBuildBlueprintV2, then run the full blueprint gate.
- *
- * Every failure is a typed `BlueprintCompileError` or `BlueprintContractError`;
- * nothing degrades, defaults, or falls back (WBV2-018).
- */
 export function compileWebsiteBuildBlueprint(
   input: CompileWebsiteBuildBlueprintInput,
 ): WebsiteBuildBlueprintArtifact {
   const landscapeRef: ArtifactRef = refForArtifact(input.landscape);
   const routes = buildRoutes(input.specRoutes, input.model.routes);
 
-  // Adopted patterns contribute their abstract invariants as the second-lowest
-  // design tier; the model's generic principles sit beneath them (WBV2-019).
   const adoptedPatterns = input.patternPortfolio.patterns.filter(
     (pattern) => !["REJECT", "UNKNOWN"].includes(pattern.disposition),
   );
@@ -572,10 +538,10 @@ export function compileWebsiteBuildBlueprint(
       ),
       pattern_portfolio_digest: digestOf(input.patternPortfolio),
     },
-    strategy: strategyOf(input.model.strategy),
+    strategy: strategyOf(input.model.strategy, input.valueProposition),
     design_direction: designDirection,
-    content_guardrails: guardrailsOf(input.model.content_guardrails),
-    conversion: conversionOf(input.model.conversion, input.clientVision),
+    content_guardrails: guardrailsOf(input.model.content_guardrails, input.contentGuardrails),
+    conversion: conversionOf(input.model.conversion, input.clientVision, input.conversionAuthority),
     routes,
     visual_requirements: deriveVisualRequirements(routes),
     acceptance_tests: stringArray(input.model.acceptance_tests),
@@ -591,8 +557,6 @@ export function compileWebsiteBuildBlueprint(
     payload,
   });
 
-  // Contract law first (schema, producer, provenance shape, palette, raw
-  // transfer), then this compiler's semantic gate.
   assertWebsiteBuildBlueprintV2(blueprint);
   assertBlueprintIdentity(payload, input.landscape);
   assertProvenanceCorrespondence(payload, input);
