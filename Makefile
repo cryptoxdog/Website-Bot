@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 .DEFAULT_GOAL := help
 
-.PHONY: help install \
+.PHONY: help install website \
         pipeline-plan pipeline-local-proof pipeline-publish-proof pipeline-end-to-end \
         generate-spec normalize-spec provision-plan provision-client \
         verify verify-all verify-preflight verify-source verify-build verify-smoke \
@@ -12,6 +12,10 @@ SHELL := /bin/sh
 help:
 	@printf '%s\n' 'L9 Website Factory Bot — command surface'
 	@printf '%s\n' ''
+	@printf '%s\n' '── Primary operator surface ──'
+	@printf '%-30s %s\n' 'make website' 'Find one domain_spec.source.yaml, normalize it, and build the site locally'
+	@printf '%s\n' '  Drop one domain_spec.source.yaml into repo context; no flags or build id required.'
+	@printf '%s\n' ''
 	@printf '%s\n' '── Setup ──'
 	@printf '%-30s %s\n' 'make install' 'Install dependencies (npm ci)'
 	@printf '%s\n' ''
@@ -20,7 +24,7 @@ help:
 	@printf '%-30s %s\n' 'make pipeline-local-proof' 'Materialize + Astro build a site locally (needs provider keys)'
 	@printf '%-30s %s\n' 'make pipeline-publish-proof' 'Local proof + publish source to the client GitHub repo'
 	@printf '%-30s %s\n' 'make pipeline-end-to-end' 'Full run: build, publish, Vercel deploy, SEO handoff'
-	@printf '%s\n' '  (pass a spec: make pipeline-local-proof ARGS="--spec=<path> --build-id=<id>")'
+	@printf '%s\n' '  (advanced surfaces remain available for debugging/automation)'
 	@printf '%s\n' ''
 	@printf '%s\n' '── Spec & provisioning ──'
 	@printf '%-30s %s\n' 'make generate-spec' 'Generate a flat DomainSpec from a target URL (crawl + LLM)'
@@ -45,6 +49,46 @@ help:
 
 install:
 	npm ci
+
+# ── One-command operator entrypoint ──
+# Human contract: place exactly one domain_spec.source.yaml in repo context and run `make website`.
+# WEBSITE_SPEC is an automation escape hatch, not part of the normal operator ceremony.
+WEBSITE_SPEC ?=
+WEBSITE_NORMALIZED := build/intake/domain_spec.normalized.yaml
+
+website:
+	@set -eu; \
+		spec="$(WEBSITE_SPEC)"; \
+		if [ -n "$$spec" ]; then \
+			if [ ! -f "$$spec" ]; then \
+				echo "[website] WEBSITE_SPEC does not exist: $$spec"; \
+				exit 2; \
+			fi; \
+		else \
+			specs="$$(find . -maxdepth 4 -type f -name 'domain_spec.source.yaml' \
+				! -path './examples/*' \
+				! -path './node_modules/*' \
+				! -path './build/*' \
+				! -path './.git/*' | sort)"; \
+			count="$$(printf '%s\n' "$$specs" | awk 'NF { n += 1 } END { print n + 0 }')"; \
+			if [ "$$count" -eq 0 ]; then \
+				echo "[website] No domain_spec.source.yaml found."; \
+				echo "[website] Drop one source spec into repo context, then run: make website"; \
+				exit 2; \
+			fi; \
+			if [ "$$count" -ne 1 ]; then \
+				echo "[website] Expected exactly one domain_spec.source.yaml outside examples/build; found $$count:"; \
+				printf '%s\n' "$$specs"; \
+				exit 2; \
+			fi; \
+			spec="$$specs"; \
+		fi; \
+		mkdir -p "$(dir $(WEBSITE_NORMALIZED))"; \
+		echo "[website] source: $$spec"; \
+		echo "[website] normalize -> $(WEBSITE_NORMALIZED)"; \
+		npm run normalize-spec -- --in="$$spec" --out="$(WEBSITE_NORMALIZED)"; \
+		echo "[website] build -> local-proof"; \
+		npm run pipeline:local-proof -- --spec="$(WEBSITE_NORMALIZED)"
 
 # ── Pipeline ── ARGS forwards flags, e.g. ARGS="--spec=<path> --build-id=<id>"
 pipeline-plan:
@@ -125,7 +169,7 @@ evidence-show:
 	npm run evidence:show -- $(ARGS)
 
 clean:
-	rm -rf dist .astro build/sites build/evidence
+	rm -rf dist .astro build/sites build/evidence build/intake
 
 # Ship leftover work to the owning repo as a scoped PR, then prime main.
 # Artifact wipe stays `make clean`. Orchestrator lives in Cursor-Governance.
